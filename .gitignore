@@ -12,3 +12,8 @@ benchmark/data
 */data/
 benchmark/data
 /benchmark/data
+
+benchmark/multirun
+/benchmark/multirun
+*/multirun
+*/multirun/
