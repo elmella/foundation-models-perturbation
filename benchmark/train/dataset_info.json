@@ -1,0 +1,32 @@
+{
+  "builder_name": "text",
+  "citation": "",
+  "config_name": "default",
+  "dataset_name": "foundation-models-perturbation",
+  "dataset_size": 47509562,
+  "description": "",
+  "download_size": 45703066,
+  "features": {
+    "text": {
+      "dtype": "string",
+      "_type": "Value"
+    }
+  },
+  "homepage": "",
+  "license": "",
+  "size_in_bytes": 93212628,
+  "splits": {
+    "train": {
+      "name": "train",
+      "num_bytes": 47509562,
+      "num_examples": 602165,
+      "dataset_name": "foundation-models-perturbation"
+    }
+  },
+  "version": {
+    "version_str": "0.0.0",
+    "major": 0,
+    "minor": 0,
+    "patch": 0
+  }
+}

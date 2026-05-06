@@ -14,7 +14,11 @@ benchmark/benchmark/bench_norman_lfc.py
 benchmark/benchmark/bench_sciplex_deg.py
 benchmark/benchmark/bench_sciplex_lfc.py
 benchmark/benchmark/bench_tahoe_deg.py
+benchmark/benchmark/bench_tahoe_deg_restricted.py
 benchmark/benchmark/bench_tahoe_lfc.py
+benchmark/benchmark/bench_tahoe_lfc_restricted.py
+benchmark/benchmark/collect_scores_deg_restricted.py
+benchmark/benchmark/collect_scores_restricted.py
 benchmark/benchmark/logistic_regression.py
 benchmark/experimental_error/__init__.py
 benchmark/experimental_error/run_exp_error_essential.py

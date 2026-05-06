@@ -12,6 +12,7 @@ Usage:
 """
 
 import hydra
+import json
 import numpy as np
 import pandas as pd
 import anndata as ad
@@ -29,6 +30,7 @@ from sklearn.model_selection import GridSearchCV, KFold
 
 from benchmark import BenchmarkTask
 from benchmark import paths
+from benchmark.task.task import SUBMISSION_DIR
 
 # Path to the pkl file with new embeddings
 PKL_PATH = Path(__file__).resolve().parent.parent.parent.parent / "molecule_embeddings" / "tahoe_sci_op3_updated.pkl"
@@ -64,11 +66,47 @@ def filter_to_valid(adata, valid_cids):
     return adata[mask].copy()
 
 
+def submission_name(cfg):
+    """Return the submitted model name for this config."""
+    if cfg.estimator_name in ["context mean", "no change"]:
+        return cfg.estimator_name + " baseline"
+    return cfg.estimator_name + "_baseline_" + cfg.emb_name
+
+
+def already_submitted(cfg, n_valid_cids):
+    """Check if this exact restricted LFC run already has a submission."""
+    dataset_normalized = cfg.task_name.replace("-", "_")
+    fold = f"{cfg.cell_line}.{cfg.fold_id}"
+    name = submission_name(cfg)
+    restriction_marker = f"Restricted to {n_valid_cids} compounds with LPM embeddings"
+    submission_dir = SUBMISSION_DIR / dataset_normalized / fold
+    if not submission_dir.exists():
+        return False
+
+    for path in submission_dir.glob("*.json"):
+        try:
+            with open(path) as f:
+                data = json.load(f)
+        except json.JSONDecodeError:
+            continue
+
+        description = data.get("description", "") or ""
+        if data.get("name") == name and restriction_marker in description:
+            return True
+    return False
+
+
 @hydra.main(version_base=None, config_path="config/tahoe", config_name="config_tahoe_lfc_restricted")
 def main(cfg: DictConfig) -> None:
 
     # Get the set of valid compounds (those with LPM embeddings in pkl)
     valid_cids = get_valid_cids()
+    if already_submitted(cfg, len(valid_cids)):
+        print(
+            f"Skipping {cfg.cell_line}.{cfg.fold_id} {cfg.estimator_name} "
+            f"{cfg.emb_name}: already submitted for {len(valid_cids)} compounds"
+        )
+        return None
 
     # Load the training and test data
     task = BenchmarkTask(cfg.task_name, f"{cfg.cell_line}.{cfg.fold_id}")
@@ -168,10 +206,7 @@ def main(cfg: DictConfig) -> None:
     test_pred = ad.AnnData(preds, obs=test.obs.copy(), var=test.var.copy())
 
     # Name the model
-    if cfg.estimator_name in ["context mean", "no change"]:
-        name = cfg.estimator_name + " baseline"
-    else:
-        name = cfg.estimator_name + "_baseline_" + emb_name
+    name = submission_name(cfg)
 
     # Describe the model
     if emb_name == "random":
