@@ -65,32 +65,46 @@ def filter_to_valid(adata, valid_cids):
     mask = adata.obs["pert_id"].astype(int).isin(valid_cids)
     return adata[mask].copy()
 
-def already_submitted(cfg):
-    """Check if this (cell_line, fold_id, emb_name) combo already has a submission."""
+
+def submission_name(cfg):
+    """Return the submitted model name for this config."""
+    return f"{cfg.estimator_name}_{cfg.emb_name}"
+
+
+def already_submitted(cfg, n_valid_cids):
+    """Check if this exact restricted DEG run already has a submission."""
     dataset_normalized = cfg.task_name.replace("-", "_")
     fold = f"{cfg.cell_line}.{cfg.fold_id}"
-    submission_name = f"{cfg.estimator_name}_{cfg.emb_name}"
+    name = submission_name(cfg)
+    restriction_marker = f"Restricted to {n_valid_cids} compounds with LPM embeddings"
     submission_dir = SUBMISSION_DIR / dataset_normalized / fold
     if not submission_dir.exists():
         return False
-    for f in submission_dir.glob("*.json"):
-        with open(f) as fh:
-            data = json.load(fh)
-            if data.get("name") == submission_name:
-                return True
+
+    for path in submission_dir.glob("*.json"):
+        try:
+            with open(path) as f:
+                data = json.load(f)
+        except json.JSONDecodeError:
+            continue
+
+        description = data.get("description", "") or ""
+        if data.get("name") == name and restriction_marker in description:
+            return True
     return False
 
 
 @hydra.main(version_base=None, config_path="config/tahoe", config_name="config_tahoe_deg_restricted")
 def main(cfg: DictConfig):
 
-    # Skip if already submitted
-    if already_submitted(cfg):
-        print(f"Skipping {cfg.cell_line}.{cfg.fold_id} {cfg.emb_name}: already submitted")
-        return None
-
     # Get the set of valid compounds (those with LPM embeddings in pkl)
     valid_cids = get_valid_cids()
+    if already_submitted(cfg, len(valid_cids)):
+        print(
+            f"Skipping {cfg.cell_line}.{cfg.fold_id} {cfg.estimator_name} "
+            f"{cfg.emb_name}: already submitted for {len(valid_cids)} compounds"
+        )
+        return None
 
     # Load the training and test data
     task = BenchmarkTask(cfg.task_name, f"{cfg.cell_line}.{cfg.fold_id}")
@@ -194,7 +208,7 @@ def main(cfg: DictConfig):
     description += f"Restricted to {len(valid_cids)} compounds with LPM embeddings\n"
 
     # Evaluate the predictions
-    return task.submit(predictions, name=f"{cfg.estimator_name}_{cfg.emb_name}", description=description)
+    return task.submit(predictions, name=submission_name(cfg), description=description)
 
 
 if __name__ == "__main__":
