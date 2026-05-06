@@ -1,0 +1,14 @@
+model:
+  C: 1e5
+  balance_loss: true
+emb_name: random
+task_name: "expression/pert-prediction-tahoe-deg"
+dose: 3.33333
+
+hydra:
+  sweeper:
+    max_batch_size: 20
+    params:
+      +fold_id: 0,1,2,3,4
+      +cell_line: "'CVCL_0320'"
+      +estimator_name: "'no_change','prior','most_frequent'"

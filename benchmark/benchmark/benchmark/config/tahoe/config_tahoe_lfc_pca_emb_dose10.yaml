@@ -1,0 +1,31 @@
+task_name: "expression/pert-prediction-tahoe-regression"
+dose: 10.0
+
+hydra:
+  sweeper:
+    max_batch_size: 20
+    params:
+      +fold_id: 0,1,2,3,4
+      +cell_line: "'CVCL_0023'"
+      +emb_name: "
+        'random',
+        'pca',
+        'PCA.logFC_v1_64',
+        'PCA.t_v1_64',
+        'PCA.logFC_v2_64',
+        'PCA.t_v2_64',
+        'PCA.logFC_v2_128',
+        'PCA.t_v2_128',
+        'PCA.logFC_v3_64',
+        'PCA.t_v3_64',
+        'PCA.logFC_v3_128',
+        'PCA.t_v3_128',
+        'PCA.logFC_v4_64',
+        'PCA.t_v4_64',
+        'PCA.logFC_v4_128',
+        'PCA.t_v4_128',
+        'MiniMol',
+        'AIDOcell_100M_Norman_Aligned_(D=640)_concat',
+        'chatgpt',
+        'ECFP:2_pkl'"
+      +estimator_name: "'knn'"
