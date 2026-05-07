@@ -1,0 +1,10 @@
+task_name: "expression/pert-prediction-sciplex3-regression"
+
+hydra:
+  sweeper:
+    max_batch_size: 20
+    params:
+      +fold_id: 0,1,2,3,4
+      +cell_line: "'MCF7','A549','K562'"
+      +emb_name: "'LPM_emb'"
+      +estimator_name: "'lasso'"
