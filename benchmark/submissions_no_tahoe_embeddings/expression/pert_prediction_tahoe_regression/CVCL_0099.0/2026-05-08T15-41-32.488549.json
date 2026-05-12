@@ -1,0 +1,15 @@
+{
+  "timestamp": "2026-05-08T15:41:32.488549",
+  "dataset": "expression/pert_prediction_tahoe_regression",
+  "fold": "CVCL_0099.0",
+  "metrics": {
+    "primary_metric": "L2",
+    "L2": 5.353910942034376,
+    "MSE": 0.0017877106559678493,
+    "MAE": 0.01766058462405646,
+    "Spearman": 0.27349916278213876,
+    "Pearson": 0.3870030465407075
+  },
+  "name": "lasso_baseline_gene_targets_confidence_with_pubchem",
+  "description": "Embedding: gene_targets_confidence_with_pubchem from /Users/matthewmella/repos/foundation-models-perturbation/benchmark/data/tahoe/tahoe_drug_embeddings.h5ad\nSklearn pipeline: GridSearchCV(cv=KFold(n_splits=5, random_state=42, shuffle=True),\n             estimator=Pipeline(steps=[('scaler', StandardScaler()),\n                                       ('pca', PCA(n_components=100)),\n                                       ('pseudobulk', Lasso())]),\n             param_grid={'pseudobulk__alpha': [0.001, 0.01, 0.1, 1]},\n             scoring=make_scorer(l2, response_method='predict'))\nBest params: {'pseudobulk__alpha': 1}\nRestricted to 287 compounds with LPM embeddings\nEmbedding source: /Users/matthewmella/repos/foundation-models-perturbation/no_tahoe_embeddings/tahoe_sci_op3_no_tahoe_embeddings.pkl\n"
+}

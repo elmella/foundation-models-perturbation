@@ -1,0 +1,15 @@
+{
+  "timestamp": "2026-05-08T16:51:18.883204",
+  "dataset": "expression/pert_prediction_tahoe_regression",
+  "fold": "CVCL_0397.1",
+  "metrics": {
+    "primary_metric": "L2",
+    "L2": 6.80523403099668,
+    "MSE": 0.0033894694006101097,
+    "MAE": 0.022144707756283574,
+    "Spearman": 0.3001721682733405,
+    "Pearson": 0.40394737709905665
+  },
+  "name": "knn_baseline_unimol2-570m-H",
+  "description": "Embedding: unimol2-570m-H from /Users/matthewmella/repos/foundation-models-perturbation/benchmark/data/tahoe/tahoe_drug_embeddings.h5ad\nSklearn pipeline: GridSearchCV(cv=KFold(n_splits=5, random_state=42, shuffle=True),\n             estimator=Pipeline(steps=[('scaler', StandardScaler()),\n                                       ('pca', PCA(n_components=100)),\n                                       ('pseudobulk', KNeighborsRegressor())]),\n             param_grid={'pseudobulk__n_neighbors': [20, 40, 60, 80, 100]},\n             scoring=make_scorer(l2, response_method='predict'))\nBest params: {'pseudobulk__n_neighbors': 100}\nRestricted to 287 compounds with LPM embeddings\nEmbedding source: /Users/matthewmella/repos/foundation-models-perturbation/no_tahoe_embeddings/tahoe_sci_op3_no_tahoe_embeddings.pkl\n"
+}

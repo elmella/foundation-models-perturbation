@@ -33,12 +33,26 @@ from benchmark import paths
 from benchmark.task.task import SUBMISSION_DIR
 
 # Path to the pkl file with new embeddings
-PKL_PATH = Path(__file__).resolve().parent.parent.parent.parent / "molecule_embeddings" / "tahoe_sci_op3_updated.pkl"
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+PKL_PATH = REPO_ROOT / "molecule_embeddings" / "tahoe_sci_op3_updated.pkl"
 
 
-def get_valid_cids():
+def resolve_repo_path(path):
+    path = Path(path)
+    return path if path.is_absolute() else REPO_ROOT / path
+
+
+def get_pkl_path(cfg):
+    return resolve_repo_path(cfg.get("lpm_source_path", PKL_PATH))
+
+
+def get_submission_root(cfg):
+    return resolve_repo_path(cfg.get("submission_root", SUBMISSION_DIR))
+
+
+def get_valid_cids(cfg):
     """Load pkl and return set of valid pubchem_cids (compounds with LPM_emb)."""
-    pkl_df = pd.read_pickle(PKL_PATH)
+    pkl_df = pd.read_pickle(get_pkl_path(cfg))
     tahoe_pkl = pkl_df[pkl_df["dataset"] == "tahoe"]
     tahoe_pkl_lpm = tahoe_pkl[tahoe_pkl["LPM_emb"].notna()].drop_duplicates(
         subset="pubchem_cid", keep="first"
@@ -46,9 +60,9 @@ def get_valid_cids():
     return set(tahoe_pkl_lpm["pubchem_cid"].astype(int).values)
 
 
-def load_pkl_embeddings(emb_name):
+def load_pkl_embeddings(cfg, emb_name):
     """Load embedding lookup from pkl. Returns dict: pubchem_cid -> np.array."""
-    pkl_df = pd.read_pickle(PKL_PATH)
+    pkl_df = pd.read_pickle(get_pkl_path(cfg))
     tahoe_pkl = pkl_df[pkl_df["dataset"] == "tahoe"]
     tahoe_pkl_lpm = tahoe_pkl[tahoe_pkl["LPM_emb"].notna()].drop_duplicates(
         subset="pubchem_cid", keep="first"
@@ -79,7 +93,9 @@ def already_submitted(cfg, n_valid_cids):
     fold = f"{cfg.cell_line}.{cfg.fold_id}"
     name = submission_name(cfg)
     restriction_marker = f"Restricted to {n_valid_cids} compounds with LPM embeddings"
-    submission_dir = SUBMISSION_DIR / dataset_normalized / fold
+    source_marker = f"Embedding source: {get_pkl_path(cfg)}"
+    custom_source = "lpm_source_path" in cfg
+    submission_dir = get_submission_root(cfg) / dataset_normalized / fold
     if not submission_dir.exists():
         return False
 
@@ -91,7 +107,11 @@ def already_submitted(cfg, n_valid_cids):
             continue
 
         description = data.get("description", "") or ""
-        if data.get("name") == name and restriction_marker in description:
+        if data.get("name") != name or restriction_marker not in description:
+            continue
+        if custom_source and source_marker not in description:
+            continue
+        else:
             return True
     return False
 
@@ -100,7 +120,7 @@ def already_submitted(cfg, n_valid_cids):
 def main(cfg: DictConfig) -> None:
 
     # Get the set of valid compounds (those with LPM embeddings in pkl)
-    valid_cids = get_valid_cids()
+    valid_cids = get_valid_cids(cfg)
     if already_submitted(cfg, len(valid_cids)):
         print(
             f"Skipping {cfg.cell_line}.{cfg.fold_id} {cfg.estimator_name} "
@@ -137,7 +157,7 @@ def main(cfg: DictConfig) -> None:
         # Load from pkl file
         pkl_col = "ECFP:2" if cfg.emb_name == "ECFP:2_pkl" else "LPM_emb"
         emb_name = cfg.emb_name
-        emb_lookup = load_pkl_embeddings(pkl_col)
+        emb_lookup = load_pkl_embeddings(cfg, pkl_col)
         train_emb = np.stack([emb_lookup[int(cid)] for cid in train.obs["pert_id"].astype(int)])
         test_emb = np.stack([emb_lookup[int(cid)] for cid in test.obs["pert_id"].astype(int)])
     else:
@@ -214,15 +234,21 @@ def main(cfg: DictConfig) -> None:
     elif emb_name == "pca":
         description = "Embedding: PCA(n_components=100).fit_transform(np.concatenate((train.X, test.X)))\n"
     elif emb_name in ("ECFP:2_pkl", "LPM_emb"):
-        description = f"Embedding: {emb_name} from {PKL_PATH}\n"
+        description = f"Embedding: {emb_name} from {get_pkl_path(cfg)}\n"
     else:
         description = "Embedding: " + emb_name + " from " + str(paths.TAHOE_DRUG_EMBEDDINGS) + "\n"
     description += "Sklearn pipeline: " + str(estimator) + "\n"
     description += "Best params: " + str(estimator.best_params_) + "\n"
     description += f"Restricted to {len(valid_cids)} compounds with LPM embeddings\n"
+    description += f"Embedding source: {get_pkl_path(cfg)}\n"
 
     # Evaluate the predictions
-    return task.submit(test_pred, name=name, description=description)
+    return task.submit(
+        test_pred,
+        name=name,
+        description=description,
+        submission_dir=get_submission_root(cfg),
+    )
 
 if __name__ == "__main__":
     main()

@@ -11,14 +11,31 @@ Usage:
 
 import json
 import numpy as np
+import os
 import pandas as pd
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-SUBMISSION_DIR = Path(__file__).resolve().parent.parent.parent / "submissions"
-OUTPUT_CSV = REPO_ROOT / "results" / "scores" / "tahoe_lfc_restricted.csv"
-PKL_PATH = REPO_ROOT / "molecule_embeddings" / "tahoe_sci_op3_updated.pkl"
+DEFAULT_SUBMISSION_DIR = Path(__file__).resolve().parent.parent.parent / "submissions"
+DEFAULT_OUTPUT_CSV = REPO_ROOT / "results" / "scores" / "tahoe_lfc_restricted.csv"
+DEFAULT_PKL_PATH = REPO_ROOT / "molecule_embeddings" / "tahoe_sci_op3_updated.pkl"
 EXP_ERROR_CSV = REPO_ROOT / "results" / "exp_error" / "exp_err_Tahoe_outer_10_inner_20_seed_5050.csv"
+
+
+def resolve_repo_path(path):
+    path = Path(path)
+    return path if path.is_absolute() else REPO_ROOT / path
+
+
+SUBMISSION_DIR = resolve_repo_path(
+    os.environ.get("TAHOE_LFC_RESTRICTED_SUBMISSION_DIR", DEFAULT_SUBMISSION_DIR)
+)
+OUTPUT_CSV = resolve_repo_path(
+    os.environ.get("TAHOE_LFC_RESTRICTED_OUTPUT_CSV", DEFAULT_OUTPUT_CSV)
+)
+PKL_PATH = resolve_repo_path(
+    os.environ.get("TAHOE_LFC_RESTRICTED_LPM_SOURCE_PATH", DEFAULT_PKL_PATH)
+)
 
 
 def compute_restricted_exp_error():
@@ -136,6 +153,7 @@ def collect():
     exp_df = compute_restricted_exp_error()
     df = pd.concat([df, exp_df], ignore_index=True)
 
+    OUTPUT_CSV.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(OUTPUT_CSV, index=True)
 
     print(f"\nSaved {len(df)} rows to {OUTPUT_CSV}")

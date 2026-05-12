@@ -1,0 +1,15 @@
+{
+  "timestamp": "2026-05-08T16:25:55.968516",
+  "dataset": "expression/pert_prediction_tahoe_regression",
+  "fold": "CVCL_1717.0",
+  "metrics": {
+    "primary_metric": "L2",
+    "L2": 4.738370080559095,
+    "MSE": 0.0013160348291663166,
+    "MAE": 0.01579672142382863,
+    "Spearman": 0.3142426448868548,
+    "Pearson": 0.4110477842863486
+  },
+  "name": "knn_baseline_MiniMol",
+  "description": "Embedding: MiniMol from /Users/matthewmella/repos/foundation-models-perturbation/benchmark/data/tahoe/tahoe_drug_embeddings.h5ad\nSklearn pipeline: GridSearchCV(cv=KFold(n_splits=5, random_state=42, shuffle=True),\n             estimator=Pipeline(steps=[('scaler', StandardScaler()),\n                                       ('pca', PCA(n_components=100)),\n                                       ('pseudobulk', KNeighborsRegressor())]),\n             param_grid={'pseudobulk__n_neighbors': [20, 40, 60, 80, 100]},\n             scoring=make_scorer(l2, response_method='predict'))\nBest params: {'pseudobulk__n_neighbors': 80}\nRestricted to 287 compounds with LPM embeddings\nEmbedding source: /Users/matthewmella/repos/foundation-models-perturbation/no_tahoe_embeddings/tahoe_sci_op3_no_tahoe_embeddings.pkl\n"
+}

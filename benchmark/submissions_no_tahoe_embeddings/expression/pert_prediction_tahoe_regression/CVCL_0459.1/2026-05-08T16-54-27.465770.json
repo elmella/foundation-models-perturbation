@@ -1,0 +1,15 @@
+{
+  "timestamp": "2026-05-08T16:54:27.465770",
+  "dataset": "expression/pert_prediction_tahoe_regression",
+  "fold": "CVCL_0459.1",
+  "metrics": {
+    "primary_metric": "L2",
+    "L2": 6.070966316466178,
+    "MSE": 0.0027818542641254956,
+    "MAE": 0.017746989963175044,
+    "Spearman": 0.3363707566009116,
+    "Pearson": 0.402471857435594
+  },
+  "name": "lasso_baseline_ChemBERTa-77M-MTR",
+  "description": "Embedding: ChemBERTa-77M-MTR from /Users/matthewmella/repos/foundation-models-perturbation/benchmark/data/tahoe/tahoe_drug_embeddings.h5ad\nSklearn pipeline: GridSearchCV(cv=KFold(n_splits=5, random_state=42, shuffle=True),\n             estimator=Pipeline(steps=[('scaler', StandardScaler()),\n                                       ('pca', PCA(n_components=100)),\n                                       ('pseudobulk', Lasso())]),\n             param_grid={'pseudobulk__alpha': [0.001, 0.01, 0.1, 1]},\n             scoring=make_scorer(l2, response_method='predict'))\nBest params: {'pseudobulk__alpha': 1}\nRestricted to 287 compounds with LPM embeddings\nEmbedding source: /Users/matthewmella/repos/foundation-models-perturbation/no_tahoe_embeddings/tahoe_sci_op3_no_tahoe_embeddings.pkl\n"
+}

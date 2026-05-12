@@ -1,0 +1,15 @@
+{
+  "timestamp": "2026-05-11T11:06:32.674114",
+  "dataset": "expression/pert_prediction_tahoe_regression",
+  "fold": "CVCL_0028.3",
+  "metrics": {
+    "primary_metric": "L2",
+    "L2": 5.85715757815321,
+    "MSE": 0.0019989103586705516,
+    "MAE": 0.020962053854631086,
+    "Spearman": 0.23615126828621702,
+    "Pearson": 0.3190835290100822
+  },
+  "name": "knn_baseline_topological",
+  "description": "Embedding: topological from /Users/matthewmella/repos/foundation-models-perturbation/benchmark/data/tahoe/tahoe_drug_embeddings.h5ad\nSklearn pipeline: GridSearchCV(cv=KFold(n_splits=5, random_state=42, shuffle=True),\n             estimator=Pipeline(steps=[('scaler', StandardScaler()),\n                                       ('pca', PCA(n_components=100)),\n                                       ('pseudobulk', KNeighborsRegressor())]),\n             param_grid={'pseudobulk__n_neighbors': [20, 40, 60, 80, 100]},\n             scoring=make_scorer(l2, response_method='predict'))\nBest params: {'pseudobulk__n_neighbors': 100}\nRestricted to 287 compounds with LPM embeddings\nEmbedding source: /Users/matthewmella/repos/foundation-models-perturbation/no_tahoe_embeddings/tahoe_sci_op3_no_tahoe_embeddings.pkl\n"
+}

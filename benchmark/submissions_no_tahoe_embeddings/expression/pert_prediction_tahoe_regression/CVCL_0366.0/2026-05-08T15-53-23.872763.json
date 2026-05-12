@@ -1,0 +1,15 @@
+{
+  "timestamp": "2026-05-08T15:53:23.872763",
+  "dataset": "expression/pert_prediction_tahoe_regression",
+  "fold": "CVCL_0366.0",
+  "metrics": {
+    "primary_metric": "L2",
+    "L2": 6.110848069947269,
+    "MSE": 0.0023181965902874776,
+    "MAE": 0.019843688985849053,
+    "Spearman": 0.30431006040784836,
+    "Pearson": 0.3969577108902622
+  },
+  "name": "lasso_baseline_boltz_affinity_probability_binary_fragment",
+  "description": "Embedding: boltz_affinity_probability_binary_fragment from /Users/matthewmella/repos/foundation-models-perturbation/benchmark/data/tahoe/tahoe_drug_embeddings.h5ad\nSklearn pipeline: GridSearchCV(cv=KFold(n_splits=5, random_state=42, shuffle=True),\n             estimator=Pipeline(steps=[('scaler', StandardScaler()),\n                                       ('pca', PCA(n_components=100)),\n                                       ('pseudobulk', Lasso())]),\n             param_grid={'pseudobulk__alpha': [0.001, 0.01, 0.1, 1]},\n             scoring=make_scorer(l2, response_method='predict'))\nBest params: {'pseudobulk__alpha': 1}\nRestricted to 287 compounds with LPM embeddings\nEmbedding source: /Users/matthewmella/repos/foundation-models-perturbation/no_tahoe_embeddings/tahoe_sci_op3_no_tahoe_embeddings.pkl\n"
+}

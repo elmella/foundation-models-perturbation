@@ -1,0 +1,15 @@
+{
+  "timestamp": "2026-05-11T09:58:50.454450",
+  "dataset": "expression/pert_prediction_tahoe_regression",
+  "fold": "CVCL_0371.2",
+  "metrics": {
+    "primary_metric": "L2",
+    "L2": 2.537777929666912,
+    "MSE": 0.00039647538521888563,
+    "MAE": 0.009264843170455108,
+    "Spearman": 0.6990516629817733,
+    "Pearson": 0.9082557676604284
+  },
+  "name": "lasso_baseline_pca",
+  "description": "Embedding: PCA(n_components=100).fit_transform(np.concatenate((train.X, test.X)))\nSklearn pipeline: GridSearchCV(cv=KFold(n_splits=5, random_state=42, shuffle=True),\n             estimator=Pipeline(steps=[('pseudobulk', Lasso())]),\n             param_grid={'pseudobulk__alpha': [0.001, 0.01, 0.1, 1]},\n             scoring=make_scorer(l2, response_method='predict'))\nBest params: {'pseudobulk__alpha': 0.001}\nRestricted to 287 compounds with LPM embeddings\nEmbedding source: /Users/matthewmella/repos/foundation-models-perturbation/no_tahoe_embeddings/tahoe_sci_op3_no_tahoe_embeddings.pkl\n"
+}

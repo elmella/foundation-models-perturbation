@@ -1,0 +1,15 @@
+{
+  "timestamp": "2026-05-11T10:54:04.503398",
+  "dataset": "expression/pert_prediction_tahoe_regression",
+  "fold": "CVCL_1693.2",
+  "metrics": {
+    "primary_metric": "L2",
+    "L2": 4.850022200775301,
+    "MSE": 0.0013789088835010855,
+    "MAE": 0.016123174352439065,
+    "Spearman": 0.33674233074584753,
+    "Pearson": 0.4382208330832698
+  },
+  "name": "lasso_baseline_MolT5",
+  "description": "Embedding: MolT5 from /Users/matthewmella/repos/foundation-models-perturbation/benchmark/data/tahoe/tahoe_drug_embeddings.h5ad\nSklearn pipeline: GridSearchCV(cv=KFold(n_splits=5, random_state=42, shuffle=True),\n             estimator=Pipeline(steps=[('scaler', StandardScaler()),\n                                       ('pca', PCA(n_components=100)),\n                                       ('pseudobulk', Lasso())]),\n             param_grid={'pseudobulk__alpha': [0.001, 0.01, 0.1, 1]},\n             scoring=make_scorer(l2, response_method='predict'))\nBest params: {'pseudobulk__alpha': 0.1}\nRestricted to 287 compounds with LPM embeddings\nEmbedding source: /Users/matthewmella/repos/foundation-models-perturbation/no_tahoe_embeddings/tahoe_sci_op3_no_tahoe_embeddings.pkl\n"
+}

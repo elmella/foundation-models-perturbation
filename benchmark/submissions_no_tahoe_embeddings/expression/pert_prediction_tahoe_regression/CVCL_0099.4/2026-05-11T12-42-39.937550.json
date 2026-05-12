@@ -1,0 +1,15 @@
+{
+  "timestamp": "2026-05-11T12:42:39.937550",
+  "dataset": "expression/pert_prediction_tahoe_regression",
+  "fold": "CVCL_0099.4",
+  "metrics": {
+    "primary_metric": "L2",
+    "L2": 5.765616383580069,
+    "MSE": 0.002188033103520467,
+    "MAE": 0.018515372498217084,
+    "Spearman": 0.3110977230403063,
+    "Pearson": 0.44043316546849226
+  },
+  "name": "knn_baseline_random",
+  "description": "Embedding: np.random.random((..., 100))\nSklearn pipeline: GridSearchCV(cv=KFold(n_splits=5, random_state=42, shuffle=True),\n             estimator=Pipeline(steps=[('scaler', StandardScaler()),\n                                       ('pca', PCA(n_components=100)),\n                                       ('pseudobulk', KNeighborsRegressor())]),\n             param_grid={'pseudobulk__n_neighbors': [20, 40, 60, 80, 100]},\n             scoring=make_scorer(l2, response_method='predict'))\nBest params: {'pseudobulk__n_neighbors': 100}\nRestricted to 287 compounds with LPM embeddings\nEmbedding source: /Users/matthewmella/repos/foundation-models-perturbation/no_tahoe_embeddings/tahoe_sci_op3_no_tahoe_embeddings.pkl\n"
+}
