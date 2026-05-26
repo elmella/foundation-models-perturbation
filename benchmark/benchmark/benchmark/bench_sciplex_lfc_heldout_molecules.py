@@ -2,8 +2,9 @@
 Benchmark sci-Plex LFC on the fixed LPM molecular holdout split.
 
 This runner does not use the original sci-Plex cross-validation folds. It uses:
-  - train: embedded sci-Plex compounds not labeled val/test in heldout_molecules.tsv
-  - test: embedded sci-Plex compounds labeled val or test in heldout_molecules.tsv
+  - train: embedded sci-Plex compounds not labeled by cfg.test_split_labels
+  - test: embedded sci-Plex compounds labeled by cfg.test_split_labels
+    in heldout_molecules.tsv
 
 Usage:
     uv run python -m benchmark.benchmark.bench_sciplex_lfc_heldout_molecules \
@@ -15,10 +16,10 @@ import json
 import anndata as ad
 import hydra
 import numpy as np
+import pandas as pd
 from omegaconf import DictConfig
 from sklearn.decomposition import PCA
 from sklearn.dummy import DummyRegressor
-from sklearn.impute import SimpleImputer
 from sklearn.linear_model import Lasso
 from sklearn.metrics import make_scorer
 from sklearn.model_selection import GridSearchCV, KFold
@@ -29,10 +30,12 @@ from sklearn.preprocessing import StandardScaler
 from benchmark import BenchmarkTask
 from benchmark import paths
 from benchmark.benchmark.bench_sciplex_lfc_restricted import (
-    get_heldout_drugs,
+    SCIPLEX_DATASET_ALIASES,
+    get_heldout_path,
     get_lpm_format,
     get_pkl_path,
     get_restriction_path,
+    get_sciplex_drug_to_cid,
     get_submission_root,
     get_valid_drugs,
     load_pkl_embeddings,
@@ -48,15 +51,43 @@ def submission_name(cfg):
     return cfg.estimator_name + "_baseline_" + cfg.emb_name
 
 
-def submission_split(cell_line):
-    return f"{cell_line}.{SPLIT_ID}"
+def get_test_split_labels(cfg):
+    labels = cfg.get("test_split_labels", ["test", "val"])
+    if isinstance(labels, str):
+        labels = [labels]
+    return tuple(str(label).lower() for label in labels)
+
+
+def format_test_split_labels(cfg):
+    return ",".join(get_test_split_labels(cfg))
+
+
+def split_id(cfg):
+    labels = set(get_test_split_labels(cfg))
+    if labels == {"test", "val"}:
+        return SPLIT_ID
+    return SPLIT_ID + "_" + "_".join(get_test_split_labels(cfg))
+
+
+def submission_split(cfg):
+    return f"{cfg.cell_line}.{split_id(cfg)}"
+
+
+def get_heldout_drugs_for_labels(cfg):
+    heldout = pd.read_csv(get_heldout_path(cfg), sep="\t")
+    dataset = heldout["dataset"].astype(str).str.lower()
+    split = heldout["split"].astype(str).str.lower()
+    mask = dataset.isin(SCIPLEX_DATASET_ALIASES) & split.isin(get_test_split_labels(cfg))
+    heldout_cids = set(heldout.loc[mask, "molecule"].astype(str))
+    cid_to_drug = {cid: drug for drug, cid in get_sciplex_drug_to_cid().items()}
+    return {cid_to_drug[cid] for cid in heldout_cids & set(cid_to_drug)}
 
 
 def already_submitted(cfg, n_valid_drugs):
     dataset_normalized = cfg.task_name.replace("-", "_")
     name = submission_name(cfg)
     submission_dir = (
-        get_submission_root(cfg) / dataset_normalized / submission_split(cfg.cell_line)
+        get_submission_root(cfg) / dataset_normalized / submission_split(cfg)
     )
     if not submission_dir.exists():
         return False
@@ -66,7 +97,7 @@ def already_submitted(cfg, n_valid_drugs):
         f"Embedding source: {get_pkl_path(cfg)}",
         f"Restriction source: {get_restriction_path(cfg)}",
         "Split: fixed molecular holdout",
-        "Test split labels: test,val",
+        f"Test split labels: {format_test_split_labels(cfg)}",
     ]
     for path in submission_dir.glob("*.json"):
         try:
@@ -91,7 +122,7 @@ def load_split(cfg, valid_drugs):
 
     adata = adata[adata.obs["cell_line"] == cfg.cell_line].copy()
     adata.obs["pert_id"] = adata.obs["drug"]
-    heldout_drugs = get_heldout_drugs(cfg)
+    heldout_drugs = get_heldout_drugs_for_labels(cfg)
     test_drugs = valid_drugs & heldout_drugs
     train, test = split_by_heldout(adata, valid_drugs, test_drugs)
     return train, test, test_drugs
@@ -135,7 +166,6 @@ def build_estimator(cfg, train, train_emb):
             pipeline = Pipeline([("pseudobulk", KNeighborsRegressor())])
         else:
             pipeline = Pipeline([
-                ("imputer", SimpleImputer(strategy="mean", keep_empty_features=True)),
                 ("scaler", StandardScaler()),
                 ("pca", PCA(n_components=pca_n_components)),
                 ("pseudobulk", KNeighborsRegressor()),
@@ -150,7 +180,6 @@ def build_estimator(cfg, train, train_emb):
             pipeline = Pipeline([("pseudobulk", Lasso())])
         else:
             pipeline = Pipeline([
-                ("imputer", SimpleImputer(strategy="mean", keep_empty_features=True)),
                 ("scaler", StandardScaler()),
                 ("pca", PCA(n_components=pca_n_components)),
                 ("pseudobulk", Lasso()),
@@ -206,7 +235,7 @@ def main(cfg: DictConfig) -> None:
     preds = estimator.predict(test_emb)
     test_pred = ad.AnnData(preds, obs=test.obs.copy(), var=test.var.copy())
 
-    task = BenchmarkTask(cfg.task_name, submission_split(cfg.cell_line))
+    task = BenchmarkTask(cfg.task_name, submission_split(cfg))
     task.test = test
 
     description = embedding_description(cfg, emb_name)
@@ -220,7 +249,7 @@ def main(cfg: DictConfig) -> None:
     description += f"Embedding source format: {get_lpm_format(cfg)}\n"
     description += f"Restriction source: {get_restriction_path(cfg)}\n"
     description += f"Restriction source format: {get_lpm_format(cfg, restriction=True)}\n"
-    description += "Test split labels: test,val\n"
+    description += f"Test split labels: {format_test_split_labels(cfg)}\n"
 
     return task.submit(
         test_pred,

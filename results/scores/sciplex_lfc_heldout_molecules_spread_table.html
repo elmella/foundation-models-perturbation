@@ -1,0 +1,47 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>SciPlex Heldout LFC Spread</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 32px; color: #111827; background: #ffffff; }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  .sub { color: #4b5563; margin: 0 0 20px; font-size: 13px; }
+  table { border-collapse: collapse; font-size: 13px; min-width: 960px; }
+  th, td { border-bottom: 1px solid #e5e7eb; padding: 8px 10px; text-align: left; white-space: nowrap; }
+  th { background: #f3f4f6; font-weight: 700; }
+  tr:nth-child(even) td { background: #fafafa; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .best { font-weight: 800; color: #065f46; background: #d1fae5 !important; }
+  .note { margin-top: 14px; color: #6b7280; font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>SciPlex LFC Heldout Molecules: Cell-Line Spread</h1>
+<p class="sub">Top 20 embedding/estimator pairs by mean L2 across A549, K562, and MCF7. Lower L2 is better. PCA and ECFP:2_pkl are excluded. Bold green cells are best within the displayed rows.</p>
+<table>
+<thead><tr><th>Embedding</th><th>Estimator</th><th>A549</th><th>K562</th><th>MCF7</th><th>Mean</th><th>Std Dev</th><th>Range</th></tr></thead><tbody>
+<tr><td>Morgan-initialized LPM</td><td>knn</td><td class="num">7.2211</td><td class="num best"><strong>6.8458</strong></td><td class="num best"><strong>6.8916</strong></td><td class="num best"><strong>6.9862</strong></td><td class="num">0.2048</td><td class="num">0.3754</td></tr>
+<tr><td>ErG</td><td>knn</td><td class="num best"><strong>7.1724</strong></td><td class="num">6.9895</td><td class="num">7.1610</td><td class="num">7.1076</td><td class="num">0.1025</td><td class="num">0.1829</td></tr>
+<tr><td>Morgan-initialized LPM</td><td>lasso</td><td class="num">7.3067</td><td class="num">6.9392</td><td class="num">7.2048</td><td class="num">7.1502</td><td class="num">0.1897</td><td class="num">0.3674</td></tr>
+<tr><td>SECFP</td><td>knn</td><td class="num">7.2099</td><td class="num">7.1011</td><td class="num">7.2218</td><td class="num">7.1776</td><td class="num best"><strong>0.0665</strong></td><td class="num best"><strong>0.1207</strong></td></tr>
+<tr><td>CATS3D</td><td>knn</td><td class="num">7.2302</td><td class="num">7.0344</td><td class="num">7.3165</td><td class="num">7.1937</td><td class="num">0.1446</td><td class="num">0.2821</td></tr>
+<tr><td>ChemBERTa-77M-MLM</td><td>lasso</td><td class="num">7.2865</td><td class="num">7.0135</td><td class="num">7.3174</td><td class="num">7.2058</td><td class="num">0.1672</td><td class="num">0.3039</td></tr>
+<tr><td>Random Embeddings</td><td>lasso</td><td class="num">7.2865</td><td class="num">7.0283</td><td class="num">7.3174</td><td class="num">7.2107</td><td class="num">0.1587</td><td class="num">0.2891</td></tr>
+<tr><td>CATS3D</td><td>lasso</td><td class="num">7.2865</td><td class="num">7.0292</td><td class="num">7.3174</td><td class="num">7.2110</td><td class="num">0.1582</td><td class="num">0.2881</td></tr>
+<tr><td>ErG</td><td>lasso</td><td class="num">7.2852</td><td class="num">6.9971</td><td class="num">7.3554</td><td class="num">7.2126</td><td class="num">0.1899</td><td class="num">0.3583</td></tr>
+<tr><td>Topological</td><td>lasso</td><td class="num">7.2625</td><td class="num">6.9912</td><td class="num">7.3855</td><td class="num">7.2131</td><td class="num">0.2017</td><td class="num">0.3943</td></tr>
+<tr><td>CATS2D</td><td>knn</td><td class="num">7.2929</td><td class="num">7.0788</td><td class="num">7.2799</td><td class="num">7.2172</td><td class="num">0.1200</td><td class="num">0.2141</td></tr>
+<tr><td>Random Embeddings</td><td>knn</td><td class="num">7.2991</td><td class="num">7.0698</td><td class="num">7.3003</td><td class="num">7.2231</td><td class="num">0.1327</td><td class="num">0.2305</td></tr>
+<tr><td>CATS2D</td><td>lasso</td><td class="num">7.3317</td><td class="num">7.0137</td><td class="num">7.4007</td><td class="num">7.2487</td><td class="num">0.2064</td><td class="num">0.3870</td></tr>
+<tr><td>ChemBERTa-77M-MTR</td><td>lasso</td><td class="num">7.3104</td><td class="num">7.0157</td><td class="num">7.4479</td><td class="num">7.2580</td><td class="num">0.2208</td><td class="num">0.4322</td></tr>
+<tr><td>Avalon</td><td>lasso</td><td class="num">7.3544</td><td class="num">7.0014</td><td class="num">7.4736</td><td class="num">7.2765</td><td class="num">0.2456</td><td class="num">0.4722</td></tr>
+<tr><td>FCFP</td><td>lasso</td><td class="num">7.3936</td><td class="num">6.8520</td><td class="num">7.5874</td><td class="num">7.2777</td><td class="num">0.3811</td><td class="num">0.7354</td></tr>
+<tr><td>Avalon</td><td>knn</td><td class="num">7.3523</td><td class="num">7.0772</td><td class="num">7.4046</td><td class="num">7.2780</td><td class="num">0.1758</td><td class="num">0.3273</td></tr>
+<tr><td>ECFP</td><td>lasso</td><td class="num">7.3897</td><td class="num">6.8556</td><td class="num">7.5938</td><td class="num">7.2797</td><td class="num">0.3812</td><td class="num">0.7382</td></tr>
+<tr><td>Topological</td><td>knn</td><td class="num">7.3633</td><td class="num">7.0861</td><td class="num">7.4355</td><td class="num">7.2950</td><td class="num">0.1845</td><td class="num">0.3495</td></tr>
+<tr><td>ChatGPT</td><td>lasso</td><td class="num">7.3779</td><td class="num">6.9179</td><td class="num">7.6026</td><td class="num">7.2995</td><td class="num">0.3491</td><td class="num">0.6848</td></tr>
+</tbody></table>
+<p class="note">Source: results/scores/sciplex_lfc_heldout_molecules_fresh.csv</p>
+</body>
+</html>

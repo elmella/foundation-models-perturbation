@@ -2,8 +2,9 @@
 Benchmark Tahoe LFC on the fixed LPM molecular holdout split.
 
 This runner does not use the original Tahoe cross-validation folds. It uses:
-  - train: embedded Tahoe compounds not labeled val/test in heldout_molecules.tsv
-  - test: embedded Tahoe compounds labeled val or test in heldout_molecules.tsv
+  - train: embedded Tahoe compounds not labeled by cfg.test_split_labels
+  - test: embedded Tahoe compounds labeled by cfg.test_split_labels
+    in heldout_molecules.tsv
 
 Usage:
     uv run python -m benchmark.benchmark.bench_tahoe_lfc_heldout_molecules \
@@ -20,7 +21,6 @@ import pandas as pd
 from omegaconf import DictConfig
 from sklearn.decomposition import PCA
 from sklearn.dummy import DummyRegressor
-from sklearn.impute import SimpleImputer
 from sklearn.linear_model import Lasso
 from sklearn.metrics import make_scorer
 from sklearn.model_selection import GridSearchCV, KFold
@@ -96,11 +96,33 @@ def get_valid_cids(cfg):
     return set(metadata["symbol"].astype(int).values)
 
 
+def get_test_split_labels(cfg):
+    labels = cfg.get("test_split_labels", ["test", "val"])
+    if isinstance(labels, str):
+        labels = [labels]
+    return tuple(str(label).lower() for label in labels)
+
+
+def format_test_split_labels(cfg):
+    return ",".join(get_test_split_labels(cfg))
+
+
+def split_id(cfg):
+    labels = set(get_test_split_labels(cfg))
+    if labels == {"test", "val"}:
+        return SPLIT_ID
+    return SPLIT_ID + "_" + "_".join(get_test_split_labels(cfg))
+
+
+def submission_split(cfg):
+    return f"{cfg.cell_line}.{split_id(cfg)}"
+
+
 def get_heldout_cids(cfg):
     heldout = pd.read_csv(get_heldout_path(cfg), sep="\t")
     dataset = heldout["dataset"].astype(str).str.lower()
     split = heldout["split"].astype(str).str.lower()
-    mask = dataset.isin(TAHOE_DATASET_ALIASES) & split.isin({"test", "val"})
+    mask = dataset.isin(TAHOE_DATASET_ALIASES) & split.isin(get_test_split_labels(cfg))
     return set(heldout.loc[mask, "molecule"].astype(int).values)
 
 
@@ -108,10 +130,6 @@ def submission_name(cfg):
     if cfg.estimator_name in ["context mean", "no change"]:
         return cfg.estimator_name + " baseline"
     return cfg.estimator_name + "_baseline_" + cfg.emb_name
-
-
-def submission_split(cell_line):
-    return f"{cell_line}.{SPLIT_ID}"
 
 
 def filter_to_cids(adata, cids):
@@ -123,7 +141,7 @@ def already_submitted(cfg, n_valid_cids):
     dataset_normalized = cfg.task_name.replace("-", "_")
     name = submission_name(cfg)
     submission_dir = (
-        get_submission_root(cfg) / dataset_normalized / submission_split(cfg.cell_line)
+        get_submission_root(cfg) / dataset_normalized / submission_split(cfg)
     )
     if not submission_dir.exists():
         return False
@@ -133,7 +151,7 @@ def already_submitted(cfg, n_valid_cids):
         f"Embedding source: {get_lpm_path(cfg)}",
         f"Restriction source: {get_restriction_path(cfg)}",
         "Split: fixed molecular holdout",
-        "Test split labels: test,val",
+        f"Test split labels: {format_test_split_labels(cfg)}",
     ]
     for path in submission_dir.glob("*.json"):
         try:
@@ -203,7 +221,6 @@ def build_estimator(cfg, train, train_emb):
             pipeline = Pipeline([("pseudobulk", KNeighborsRegressor())])
         else:
             pipeline = Pipeline([
-                ("imputer", SimpleImputer(strategy="mean", keep_empty_features=True)),
                 ("scaler", StandardScaler()),
                 ("pca", PCA(n_components=pca_n_components)),
                 ("pseudobulk", KNeighborsRegressor()),
@@ -218,7 +235,6 @@ def build_estimator(cfg, train, train_emb):
             pipeline = Pipeline([("pseudobulk", Lasso())])
         else:
             pipeline = Pipeline([
-                ("imputer", SimpleImputer(strategy="mean", keep_empty_features=True)),
                 ("scaler", StandardScaler()),
                 ("pca", PCA(n_components=pca_n_components)),
                 ("pseudobulk", Lasso()),
@@ -274,7 +290,7 @@ def main(cfg: DictConfig) -> None:
     preds = estimator.predict(test_emb)
     test_pred = ad.AnnData(preds, obs=test.obs.copy(), var=test.var.copy())
 
-    task = BenchmarkTask(cfg.task_name, submission_split(cfg.cell_line))
+    task = BenchmarkTask(cfg.task_name, submission_split(cfg))
     task.test = test
 
     description = embedding_description(cfg, emb_name)
@@ -288,7 +304,7 @@ def main(cfg: DictConfig) -> None:
     description += "Embedding source format: lpm_export\n"
     description += f"Restriction source: {get_restriction_path(cfg)}\n"
     description += "Restriction source format: lpm_export\n"
-    description += "Test split labels: test,val\n"
+    description += f"Test split labels: {format_test_split_labels(cfg)}\n"
 
     return task.submit(
         test_pred,
