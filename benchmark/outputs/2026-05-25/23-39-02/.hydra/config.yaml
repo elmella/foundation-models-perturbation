@@ -1,0 +1,10 @@
+task_name: expression/pert-prediction-sciplex3-regression
+lpm_source_path: lpm_paper10_ft_morgan_learned_fixmol_best_embeddings/sciplex
+lpm_source_format: lpm_export
+lpm_restriction_path: lpm_paper10_ft_morgan_learned_fixmol_best_embeddings/sciplex
+lpm_restriction_format: lpm_export
+heldout_molecules_path: lpm_paper10_ft_morgan_learned_fixmol_best_embeddings/heldout_molecules.tsv
+submission_root: /tmp/sciplex_no_old_lpm_smoke
+cell_line: K562
+emb_name: morgan_initialized_lpm
+estimator_name: knn

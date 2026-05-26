@@ -1,0 +1,4 @@
+- +cell_line=K562
+- +emb_name=morgan_initialized_lpm
+- +estimator_name=knn
+- submission_root=/tmp/sciplex_no_old_lpm_smoke

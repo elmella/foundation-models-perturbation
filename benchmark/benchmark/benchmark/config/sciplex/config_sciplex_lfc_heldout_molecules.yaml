@@ -4,10 +4,6 @@ lpm_source_format: "lpm_export"
 lpm_restriction_path: "lpm_paper10_ft_morgan_learned_fixmol_best_embeddings/sciplex"
 lpm_restriction_format: "lpm_export"
 heldout_molecules_path: "lpm_paper10_ft_morgan_learned_fixmol_best_embeddings/heldout_molecules.tsv"
-lpm_baseline_path: "all_l1000_25_epochs/sci_single_run_all_l1000_25_epochs/sci_lpm_style_embeddings_epoch_20.pkl"
-lpm_baseline_embedding_column: "lpm_style_embeddings_all"
-lpm_baseline_symbol_column: "symbol_all"
-restrict_to_lpm_baseline_availability: false
 submission_root: "benchmark/submissions_sciplex_lfc_heldout_molecules"
 
 hydra:
@@ -16,7 +12,6 @@ hydra:
     params:
       +cell_line: "'MCF7','A549','K562'"
       +emb_name: "
-        'lpm',
         'morgan_initialized_lpm',
         'random',
         'pca',
