@@ -1,0 +1,4 @@
+- +cell_line=MCF7
+- +emb_name=mordred
+- +estimator_name=knn
+- submission_root=/tmp/sciplex_mordred_smoke

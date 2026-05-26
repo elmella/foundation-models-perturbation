@@ -11,6 +11,7 @@ Usage:
 """
 
 import json
+from pathlib import Path
 
 import anndata as ad
 import hydra
@@ -18,6 +19,7 @@ import numpy as np
 from omegaconf import DictConfig
 from sklearn.decomposition import PCA
 from sklearn.dummy import DummyRegressor
+from sklearn.impute import SimpleImputer
 from sklearn.linear_model import Lasso
 from sklearn.metrics import make_scorer
 from sklearn.model_selection import GridSearchCV, KFold
@@ -30,6 +32,7 @@ from benchmark import paths
 from benchmark.benchmark.bench_sciplex_lfc_restricted import (
     filter_to_valid,
     get_heldout_drugs,
+    get_sciplex_drug_to_cid,
     get_lpm_format,
     get_pkl_path,
     get_restriction_path,
@@ -40,14 +43,53 @@ from benchmark.benchmark.bench_sciplex_lfc_restricted import (
 )
 
 SPLIT_ID = "heldout_molecules"
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+DEFAULT_LPM_BASELINE_PATH = (
+    REPO_ROOT
+    / "all_l1000_25_epochs"
+    / "sci_single_run_all_l1000_25_epochs"
+    / "sci_lpm_style_embeddings_epoch_20.pkl"
+)
 
 
 def submission_name(cfg):
     if cfg.estimator_name in ["context mean", "no change"]:
         return cfg.estimator_name + " baseline"
-    lpm_label = cfg.get("lpm_result_label", "LPM_emb")
-    suffix = lpm_label if cfg.emb_name == "LPM_emb" else cfg.emb_name
-    return cfg.estimator_name + "_baseline_" + suffix
+    return cfg.estimator_name + "_baseline_" + cfg.emb_name
+
+
+def resolve_repo_path(path):
+    path = Path(path)
+    return path if path.is_absolute() else REPO_ROOT / path
+
+
+def get_lpm_baseline_path(cfg):
+    return resolve_repo_path(cfg.get("lpm_baseline_path", DEFAULT_LPM_BASELINE_PATH))
+
+
+def get_lpm_baseline_column(cfg):
+    return cfg.get("lpm_baseline_embedding_column", "lpm_style_embeddings_all")
+
+
+def get_lpm_baseline_symbol_column(cfg):
+    return cfg.get("lpm_baseline_symbol_column", "symbol_all")
+
+
+def get_lpm_baseline_drug_to_embedding(cfg):
+    import pandas as pd
+
+    df = pd.read_pickle(get_lpm_baseline_path(cfg))
+    emb_col = get_lpm_baseline_column(cfg)
+    symbol_col = get_lpm_baseline_symbol_column(cfg)
+    cid_to_drug = {cid: drug for drug, cid in get_sciplex_drug_to_cid().items()}
+    lookup = {}
+    for _, row in df[df[emb_col].notna()].iterrows():
+        if row[symbol_col] != row[symbol_col]:
+            continue
+        cid = str(int(float(row[symbol_col])))
+        if cid in cid_to_drug:
+            lookup[cid_to_drug[cid]] = np.asarray(row[emb_col], dtype=np.float64)
+    return lookup
 
 
 def submission_split(cell_line):
@@ -110,9 +152,14 @@ def load_embeddings(cfg, train, test):
         emb_name = "pca"
         pca_emb = PCA(n_components=100).fit_transform(np.concatenate((train.X, test.X)))
         return emb_name, pca_emb[: train.shape[0]], pca_emb[train.shape[0] :]
-    if cfg.emb_name in ("ECFP:2_pkl", "LPM_emb"):
+    if cfg.emb_name in ("ECFP:2_pkl", "LPM_emb", "morgan_initialized_lpm"):
         pkl_col = "ECFP:2" if cfg.emb_name == "ECFP:2_pkl" else "LPM_emb"
         emb_lookup = load_pkl_embeddings(cfg, pkl_col)
+        train_emb = np.stack([emb_lookup[str(drug)] for drug in train.obs["drug"].astype(str)])
+        test_emb = np.stack([emb_lookup[str(drug)] for drug in test.obs["drug"].astype(str)])
+        return cfg.emb_name, train_emb, test_emb
+    if cfg.emb_name == "lpm":
+        emb_lookup = get_lpm_baseline_drug_to_embedding(cfg)
         train_emb = np.stack([emb_lookup[str(drug)] for drug in train.obs["drug"].astype(str)])
         test_emb = np.stack([emb_lookup[str(drug)] for drug in test.obs["drug"].astype(str)])
         return cfg.emb_name, train_emb, test_emb
@@ -139,6 +186,7 @@ def build_estimator(cfg, train, train_emb):
             pipeline = Pipeline([("pseudobulk", KNeighborsRegressor())])
         else:
             pipeline = Pipeline([
+                ("imputer", SimpleImputer(strategy="mean", keep_empty_features=True)),
                 ("scaler", StandardScaler()),
                 ("pca", PCA(n_components=pca_n_components)),
                 ("pseudobulk", KNeighborsRegressor()),
@@ -153,6 +201,7 @@ def build_estimator(cfg, train, train_emb):
             pipeline = Pipeline([("pseudobulk", Lasso())])
         else:
             pipeline = Pipeline([
+                ("imputer", SimpleImputer(strategy="mean", keep_empty_features=True)),
                 ("scaler", StandardScaler()),
                 ("pca", PCA(n_components=pca_n_components)),
                 ("pseudobulk", Lasso()),
@@ -175,7 +224,9 @@ def embedding_description(cfg, emb_name):
         return "Embedding: np.random.random((..., 100))\n"
     if emb_name == "pca":
         return "Embedding: PCA(n_components=100).fit_transform(np.concatenate((train.X, test.X)))\n"
-    if emb_name in ("ECFP:2_pkl", "LPM_emb"):
+    if emb_name == "lpm":
+        return f"Embedding: lpm from {get_lpm_baseline_path(cfg)} ({get_lpm_baseline_column(cfg)})\n"
+    if emb_name in ("ECFP:2_pkl", "LPM_emb", "morgan_initialized_lpm"):
         return f"Embedding: {emb_name} from {get_pkl_path(cfg)}\n"
     return "Embedding: " + emb_name + " from " + str(paths.SCIPLEX_DRUG_EMBEDDINGS) + "\n"
 
@@ -187,6 +238,8 @@ def embedding_description(cfg, emb_name):
 )
 def main(cfg: DictConfig) -> None:
     valid_drugs = get_valid_drugs(cfg)
+    if cfg.get("restrict_to_lpm_baseline_availability", False):
+        valid_drugs = valid_drugs & set(get_lpm_baseline_drug_to_embedding(cfg).keys())
     if already_submitted(cfg, len(valid_drugs)):
         print(
             f"Skipping {cfg.cell_line}.{SPLIT_ID} {cfg.estimator_name} "
