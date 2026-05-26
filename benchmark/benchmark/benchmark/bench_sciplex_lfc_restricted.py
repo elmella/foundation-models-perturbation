@@ -2,8 +2,8 @@
 Benchmark script for sci-Plex LFC with drug restriction.
 
 This mirrors bench_sciplex_lfc.py, but:
-1. Restricts drugs to those with LPM embeddings in tahoe_sci_op3_updated.pkl.
-2. Supports loading ECFP:2 and LPM_emb from the pkl file.
+1. Restricts drugs to those with LPM embeddings.
+2. Supports loading ECFP:2 and LPM_emb from the pkl/export files.
 3. Supports existing h5ad embeddings on the same restricted drug set.
 4. Skips exact restricted submissions that have already been computed.
 
@@ -35,6 +35,8 @@ from benchmark.task.task import SUBMISSION_DIR
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 PKL_PATH = REPO_ROOT / "molecule_embeddings" / "tahoe_sci_op3_updated.pkl"
+LPM_EXPORT_ROOT = REPO_ROOT / "lpm_paper10_ft_morgan_learned_fixmol_best_embeddings"
+SCIPLEX_DATASET_ALIASES = {"srivatsan20_sciplex3", "sciplex", "sciplex3"}
 
 
 def resolve_repo_path(path):
@@ -59,6 +61,12 @@ def get_lpm_format(cfg, *, restriction=False):
     return cfg.get(key, "tahoe_sci_op3")
 
 
+def get_heldout_path(cfg):
+    return resolve_repo_path(
+        cfg.get("heldout_molecules_path", LPM_EXPORT_ROOT / "heldout_molecules.tsv")
+    )
+
+
 def get_sciplex_drug_to_cid():
     pkl_df = pd.read_pickle(PKL_PATH)
     sciplex_pkl = pkl_df[pkl_df["dataset"] == "sciplex3"]
@@ -71,30 +79,72 @@ def get_sciplex_drug_to_cid():
     )
 
 
+def get_lpm_export_paths(cfg, *, restriction=False):
+    source_path = get_restriction_path(cfg) if restriction else get_pkl_path(cfg)
+    source_path = Path(source_path)
+    if source_path.is_dir():
+        export_dir = source_path
+    else:
+        export_dir = source_path.parent
+    return export_dir / "molecule_metadata.tsv", export_dir / "molecule_embeddings.npy"
+
+
+def get_lpm_export_drug_to_embedding(cfg):
+    metadata_path, embeddings_path = get_lpm_export_paths(cfg)
+    metadata = pd.read_csv(metadata_path, sep="\t")
+    embeddings = np.load(embeddings_path)
+    if len(metadata) != embeddings.shape[0]:
+        raise ValueError(
+            f"{metadata_path} has {len(metadata)} rows but {embeddings_path} has "
+            f"{embeddings.shape[0]} embeddings"
+        )
+
+    cid_to_drug = {cid: drug for drug, cid in get_sciplex_drug_to_cid().items()}
+    lookup = {}
+    for row_idx, row in metadata.iterrows():
+        cid = str(row["symbol"])
+        if cid in cid_to_drug:
+            lookup[cid_to_drug[cid]] = np.asarray(embeddings[row_idx], dtype=np.float64)
+    return lookup
+
+
+def get_heldout_drugs(cfg):
+    heldout = pd.read_csv(get_heldout_path(cfg), sep="\t")
+    dataset = heldout["dataset"].astype(str).str.lower()
+    split = heldout["split"].astype(str).str.lower()
+    mask = dataset.isin(SCIPLEX_DATASET_ALIASES) & split.isin({"test", "val"})
+    heldout_cids = set(heldout.loc[mask, "molecule"].astype(str))
+    cid_to_drug = {cid: drug for drug, cid in get_sciplex_drug_to_cid().items()}
+    return {cid_to_drug[cid] for cid in heldout_cids & set(cid_to_drug)}
+
+
 def get_valid_drugs(cfg):
     """Return sci-Plex drug names with available LPM embeddings."""
-    pkl_df = pd.read_pickle(get_restriction_path(cfg))
     lpm_format = get_lpm_format(cfg, restriction=True)
     if lpm_format == "tahoe_sci_op3":
+        pkl_df = pd.read_pickle(get_restriction_path(cfg))
         sciplex_pkl = pkl_df[pkl_df["dataset"] == "sciplex3"]
         sciplex_lpm = sciplex_pkl[sciplex_pkl["LPM_emb"].notna()].drop_duplicates(
             subset="original_pert_name", keep="first"
         )
         return set(sciplex_lpm["original_pert_name"].astype(str).values)
     if lpm_format == "pubchem_symbol_lpm_style":
+        pkl_df = pd.read_pickle(get_restriction_path(cfg))
         cid_to_drug = {cid: drug for drug, cid in get_sciplex_drug_to_cid().items()}
         valid_cids = set(
             pkl_df[pkl_df["lpm_style_embeddings"].notna()]["symbol"].astype(str).values
         )
         return {cid_to_drug[cid] for cid in valid_cids & set(cid_to_drug)}
+    if lpm_format == "lpm_export":
+        return set(get_lpm_export_drug_to_embedding(cfg).keys())
     raise ValueError(f"Unsupported lpm format: {lpm_format}")
 
 
 def load_pkl_embeddings(cfg, emb_name):
     """Load embedding lookup from pkl. Returns dict: sci-Plex drug name -> np.array."""
-    pkl_df = pd.read_pickle(get_pkl_path(cfg))
     lpm_format = get_lpm_format(cfg)
     if lpm_format == "tahoe_sci_op3":
+        pkl_df = pd.read_pickle(get_pkl_path(cfg))
         sciplex_pkl = pkl_df[pkl_df["dataset"] == "sciplex3"]
         sciplex_lpm = sciplex_pkl[sciplex_pkl["LPM_emb"].notna()].drop_duplicates(
             subset="original_pert_name", keep="first"
@@ -105,6 +155,7 @@ def load_pkl_embeddings(cfg, emb_name):
             lookup[drug] = np.asarray(row[emb_name], dtype=np.float64)
         return lookup
     if lpm_format == "pubchem_symbol_lpm_style":
+        pkl_df = pd.read_pickle(get_pkl_path(cfg))
         cid_to_drug = {cid: drug for drug, cid in get_sciplex_drug_to_cid().items()}
         lookup = {}
         for _, row in pkl_df[pkl_df["lpm_style_embeddings"].notna()].iterrows():
@@ -114,6 +165,8 @@ def load_pkl_embeddings(cfg, emb_name):
                     row["lpm_style_embeddings"], dtype=np.float64
                 )
         return lookup
+    if lpm_format == "lpm_export":
+        return get_lpm_export_drug_to_embedding(cfg)
     raise ValueError(f"Unsupported lpm format: {lpm_format}")
 
 
@@ -121,6 +174,13 @@ def filter_to_valid(adata, valid_drugs):
     """Filter an AnnData object to only drugs in valid_drugs."""
     mask = adata.obs["drug"].astype(str).isin(valid_drugs)
     return adata[mask].copy()
+
+
+def split_by_heldout(adata, valid_drugs, test_drugs):
+    train_drugs = set(valid_drugs) - set(test_drugs)
+    train = filter_to_valid(adata, train_drugs)
+    test = filter_to_valid(adata, test_drugs)
+    return train, test
 
 
 def submission_name(cfg):
@@ -176,8 +236,14 @@ def main(cfg: DictConfig) -> None:
     task = BenchmarkTask(cfg.task_name, f"{cfg.cell_line}.{cfg.fold_id}")
     train, test = task.setup()
 
-    train = filter_to_valid(train, valid_drugs)
-    test = filter_to_valid(test, valid_drugs)
+    if cfg.get("test_split_from_heldout", False):
+        adata = ad.concat([train, test], axis=0)
+        heldout_drugs = get_heldout_drugs(cfg)
+        test_drugs = valid_drugs & heldout_drugs
+        train, test = split_by_heldout(adata, valid_drugs, test_drugs)
+    else:
+        train = filter_to_valid(train, valid_drugs)
+        test = filter_to_valid(test, valid_drugs)
     task.test = test
 
     if train.n_obs == 0 or test.n_obs == 0:
@@ -274,6 +340,9 @@ def main(cfg: DictConfig) -> None:
     description += f"Embedding source format: {get_lpm_format(cfg)}\n"
     description += f"Restriction source: {get_restriction_path(cfg)}\n"
     description += f"Restriction source format: {get_lpm_format(cfg, restriction=True)}\n"
+    if cfg.get("test_split_from_heldout", False):
+        description += f"Test split source: {get_heldout_path(cfg)}\n"
+        description += "Test split labels: test,val\n"
 
     return task.submit(
         test_pred,
