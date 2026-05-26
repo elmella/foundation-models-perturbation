@@ -108,9 +108,8 @@ def load_embeddings(cfg, train, test):
         emb_name = "pca"
         pca_emb = PCA(n_components=100).fit_transform(np.concatenate((train.X, test.X)))
         return emb_name, pca_emb[: train.shape[0]], pca_emb[train.shape[0] :]
-    if cfg.emb_name in ("ECFP:2_pkl", "LPM_emb", "morgan_initialized_lpm"):
-        pkl_col = "ECFP:2" if cfg.emb_name == "ECFP:2_pkl" else "LPM_emb"
-        emb_lookup = load_pkl_embeddings(cfg, pkl_col)
+    if cfg.emb_name in ("LPM_emb", "morgan_initialized_lpm"):
+        emb_lookup = load_pkl_embeddings(cfg, "LPM_emb")
         train_emb = np.stack([emb_lookup[str(drug)] for drug in train.obs["drug"].astype(str)])
         test_emb = np.stack([emb_lookup[str(drug)] for drug in test.obs["drug"].astype(str)])
         return cfg.emb_name, train_emb, test_emb
@@ -174,7 +173,7 @@ def embedding_description(cfg, emb_name):
         return "Embedding: np.random.random((..., 100))\n"
     if emb_name == "pca":
         return "Embedding: PCA(n_components=100).fit_transform(np.concatenate((train.X, test.X)))\n"
-    if emb_name in ("ECFP:2_pkl", "LPM_emb", "morgan_initialized_lpm"):
+    if emb_name in ("LPM_emb", "morgan_initialized_lpm"):
         return f"Embedding: {emb_name} from {get_pkl_path(cfg)}\n"
     return "Embedding: " + emb_name + " from " + str(paths.SCIPLEX_DRUG_EMBEDDINGS) + "\n"
 
