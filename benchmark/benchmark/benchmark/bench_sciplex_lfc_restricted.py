@@ -199,7 +199,10 @@ def already_submitted(cfg, n_valid_drugs):
     restriction_marker = f"Restricted to {n_valid_drugs} drugs with LPM embeddings"
     source_marker = f"Embedding source: {get_pkl_path(cfg)}"
     restriction_source_marker = f"Restriction source: {get_restriction_path(cfg)}"
+    test_split_source_marker = f"Test split source: {get_heldout_path(cfg)}"
+    test_split_labels_marker = "Test split labels: test,val"
     custom_source = "lpm_source_path" in cfg or "lpm_restriction_path" in cfg
+    custom_test_split = cfg.get("test_split_from_heldout", False)
     submission_dir = get_submission_root(cfg) / dataset_normalized / fold
     if not submission_dir.exists():
         return False
@@ -216,6 +219,11 @@ def already_submitted(cfg, n_valid_drugs):
             continue
         if custom_source and (
             source_marker not in description or restriction_source_marker not in description
+        ):
+            continue
+        if custom_test_split and (
+            test_split_source_marker not in description
+            or test_split_labels_marker not in description
         ):
             continue
         return True
