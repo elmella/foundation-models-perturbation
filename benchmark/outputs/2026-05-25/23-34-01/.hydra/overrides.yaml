@@ -1,0 +1,4 @@
+- +cell_line=K562
+- +emb_name=lpm
+- +estimator_name=knn
+- submission_root=/tmp/sciplex_lpm_skip_smoke

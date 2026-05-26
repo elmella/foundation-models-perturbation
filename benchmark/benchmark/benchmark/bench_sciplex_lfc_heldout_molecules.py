@@ -251,6 +251,17 @@ def main(cfg: DictConfig) -> None:
     if train.n_obs == 0 or test.n_obs == 0:
         print(f"Skipping {cfg.cell_line}.{SPLIT_ID}: train={train.n_obs}, test={test.n_obs}")
         return None
+    if cfg.emb_name == "lpm":
+        lpm_drugs = set(get_lpm_baseline_drug_to_embedding(cfg).keys())
+        missing_train = set(train.obs["drug"].astype(str)) - lpm_drugs
+        missing_test = set(test.obs["drug"].astype(str)) - lpm_drugs
+        if missing_train or missing_test:
+            print(
+                f"Skipping {cfg.cell_line}.{SPLIT_ID} {cfg.estimator_name} lpm: "
+                f"missing embeddings for {len(missing_train)} train and "
+                f"{len(missing_test)} test drugs"
+            )
+            return None
 
     emb_name, train_emb, test_emb = load_embeddings(cfg, train, test)
     assert train_emb.shape[0] == train.n_obs
