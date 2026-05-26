@@ -6,19 +6,70 @@ writes results/scores/sciplex_lfc_restricted.csv.
 """
 
 import json
+import os
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-SUBMISSION_DIR = Path(__file__).resolve().parent.parent.parent / "submissions"
-OUTPUT_CSV = REPO_ROOT / "results" / "scores" / "sciplex_lfc_restricted.csv"
+DEFAULT_SUBMISSION_DIR = Path(__file__).resolve().parent.parent.parent / "submissions"
+SUBMISSION_DIR = Path(os.environ.get("SCIPLEX_SUBMISSION_DIR", DEFAULT_SUBMISSION_DIR))
+OUTPUT_CSV = Path(
+    os.environ.get(
+        "SCIPLEX_OUTPUT_CSV",
+        REPO_ROOT / "results" / "scores" / "sciplex_lfc_restricted.csv",
+    )
+)
+RESTRICTION_MARKER = os.environ.get("SCIPLEX_RESTRICTION_MARKER", "Restricted to")
 PKL_PATH = REPO_ROOT / "molecule_embeddings" / "tahoe_sci_op3_updated.pkl"
 EXP_ERROR_CSV = REPO_ROOT / "results" / "exp_error" / "exp_err_sciplex_outer_10_inner_20_seed_5050.csv"
 
 
-def get_valid_drugs():
+def get_valid_drugs_from_submissions():
+    valid_drugs = None
+    task_dir = SUBMISSION_DIR / "expression" / "pert_prediction_sciplex3_regression"
+    for json_path in sorted(task_dir.rglob("*.json")):
+        with open(json_path) as f:
+            data = json.load(f)
+        description = data.get("description", "") or ""
+        if RESTRICTION_MARKER not in description:
+            continue
+        restriction_path = None
+        restriction_format = "tahoe_sci_op3"
+        for line in description.splitlines():
+            if line.startswith("Restriction source:"):
+                restriction_path = Path(line.split(":", 1)[1].strip())
+            if line.startswith("Restriction source format:"):
+                restriction_format = line.split(":", 1)[1].strip()
+        if restriction_path is None:
+            continue
+        pkl_df = pd.read_pickle(restriction_path)
+        if restriction_format == "pubchem_symbol_lpm_style":
+            old_df = pd.read_pickle(PKL_PATH)
+            sciplex_pkl = old_df[old_df["dataset"] == "sciplex3"].dropna(
+                subset=["pubchem_cid", "original_pert_name"]
+            )
+            cid_to_drug = dict(
+                zip(
+                    sciplex_pkl["pubchem_cid"].astype(int).astype(str),
+                    sciplex_pkl["original_pert_name"].astype(str),
+                )
+            )
+            valid_cids = set(
+                pkl_df[pkl_df["lpm_style_embeddings"].notna()]["symbol"].astype(str).values
+            )
+            valid_drugs = {cid_to_drug[cid] for cid in valid_cids & set(cid_to_drug)}
+        else:
+            sciplex_pkl = pkl_df[pkl_df["dataset"] == "sciplex3"]
+            sciplex_lpm = sciplex_pkl[sciplex_pkl["LPM_emb"].notna()].drop_duplicates(
+                subset="original_pert_name", keep="first"
+            )
+            valid_drugs = set(sciplex_lpm["original_pert_name"].astype(str).values)
+        break
+    if valid_drugs is not None:
+        return valid_drugs
+
     pkl_df = pd.read_pickle(PKL_PATH)
     sciplex_pkl = pkl_df[pkl_df["dataset"] == "sciplex3"]
     sciplex_lpm = sciplex_pkl[sciplex_pkl["LPM_emb"].notna()].drop_duplicates(
@@ -35,7 +86,7 @@ def compute_restricted_exp_error():
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from benchmark import paths
 
-    valid_drugs = get_valid_drugs()
+    valid_drugs = get_valid_drugs_from_submissions()
 
     exp = pd.read_csv(EXP_ERROR_CSV)
     exp_q09 = exp[exp["quantile"] == 0.9].copy()
@@ -89,7 +140,7 @@ def collect():
             data = json.load(f)
 
         description = data.get("description", "") or ""
-        if "Restricted to" not in description:
+        if RESTRICTION_MARKER not in description:
             continue
 
         metrics = data.get("metrics", {})

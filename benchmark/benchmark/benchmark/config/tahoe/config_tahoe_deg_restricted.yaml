@@ -58,7 +58,6 @@ hydra:
       +emb_name: "
         'random',
         'pca',
-        'ECFP:2_pkl',
         'LPM_emb',
         'ChemBERTa-77M-MTR',
         'ChemBERTa-77M-MLM',

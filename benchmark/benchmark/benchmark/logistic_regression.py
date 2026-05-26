@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 import torch
 from jaxtyping import Float, Int
@@ -5,6 +7,13 @@ from sklearn import base
 from torch import nn, optim
 
 from benchmark.task import metrics
+
+
+def _select_cuda_device() -> torch.device:
+    n = torch.cuda.device_count()
+    if n == 0:
+        return torch.device("cpu")
+    return torch.device(f"cuda:{os.getpid() % n}")
 
 
 class LinearModel(nn.Module):
@@ -27,7 +36,7 @@ class LogisticRegression(base.BaseEstimator, base.ClassifierMixin):
         C: float = 10.0,
         balance_loss: bool = True,
     ):
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = _select_cuda_device()
         self.C = C
         self.balance_loss = balance_loss
 

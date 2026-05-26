@@ -1,0 +1,15 @@
+{
+  "timestamp": "2026-05-21T19:12:30.951667",
+  "dataset": "expression/pert_prediction_sciplex3_regression",
+  "fold": "MCF7.4",
+  "metrics": {
+    "primary_metric": "L2",
+    "L2": 8.153859154749506,
+    "MSE": 0.005678042971864454,
+    "MAE": 0.029027094883155614,
+    "Spearman": 0.2426613444790691,
+    "Pearson": 0.33743608551405857
+  },
+  "name": "knn_baseline_LPM_emb_0521_170ep",
+  "description": "Embedding: LPM_emb from /home/matthew-mella/valinor/foundation-models-perturbation/0521_170ep.pkl\nSklearn pipeline: GridSearchCV(cv=KFold(n_splits=5, random_state=42, shuffle=True),\n             estimator=Pipeline(steps=[('scaler', StandardScaler()),\n                                       ('pca', PCA(n_components=100)),\n                                       ('pseudobulk', KNeighborsRegressor())]),\n             param_grid={'pseudobulk__n_neighbors': [20, 40, 60, 80, 100]},\n             scoring=make_scorer(l2, response_method='predict'))\nBest params: {'pseudobulk__n_neighbors': 40}\nRestricted to 177 drugs with LPM embeddings\nEmbedding source: /home/matthew-mella/valinor/foundation-models-perturbation/0521_170ep.pkl\nEmbedding source format: pubchem_symbol_lpm_style\nRestriction source: /home/matthew-mella/valinor/foundation-models-perturbation/0521_170ep.pkl\nRestriction source format: pubchem_symbol_lpm_style\n"
+}

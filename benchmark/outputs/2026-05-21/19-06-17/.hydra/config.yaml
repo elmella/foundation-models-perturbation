@@ -1,0 +1,11 @@
+task_name: expression/pert-prediction-sciplex3-regression
+fold_id: 0
+cell_line: MCF7
+emb_name: LPM_emb
+estimator_name: knn
+lpm_source_path: ../0521_170ep.pkl
+lpm_source_format: pubchem_symbol_lpm_style
+lpm_restriction_path: ../0521_170ep.pkl
+lpm_restriction_format: pubchem_symbol_lpm_style
+result_label: LPM_emb_0521_170ep
+submission_root: ../benchmark/submissions_sciplex_lfc_0521_compare

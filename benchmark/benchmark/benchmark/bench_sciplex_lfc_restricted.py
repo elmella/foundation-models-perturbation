@@ -33,35 +33,88 @@ from benchmark import BenchmarkTask
 from benchmark import paths
 from benchmark.task.task import SUBMISSION_DIR
 
-PKL_PATH = (
-    Path(__file__).resolve().parent.parent.parent.parent
-    / "molecule_embeddings"
-    / "tahoe_sci_op3_updated.pkl"
-)
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+PKL_PATH = REPO_ROOT / "molecule_embeddings" / "tahoe_sci_op3_updated.pkl"
 
 
-def get_valid_drugs():
+def resolve_repo_path(path):
+    path = Path(path)
+    return path if path.is_absolute() else REPO_ROOT / path
+
+
+def get_pkl_path(cfg):
+    return resolve_repo_path(cfg.get("lpm_source_path", PKL_PATH))
+
+
+def get_restriction_path(cfg):
+    return resolve_repo_path(cfg.get("lpm_restriction_path", get_pkl_path(cfg)))
+
+
+def get_submission_root(cfg):
+    return resolve_repo_path(cfg.get("submission_root", SUBMISSION_DIR))
+
+
+def get_lpm_format(cfg, *, restriction=False):
+    key = "lpm_restriction_format" if restriction else "lpm_source_format"
+    return cfg.get(key, "tahoe_sci_op3")
+
+
+def get_sciplex_drug_to_cid():
+    pkl_df = pd.read_pickle(PKL_PATH)
+    sciplex_pkl = pkl_df[pkl_df["dataset"] == "sciplex3"]
+    sciplex_pkl = sciplex_pkl.dropna(subset=["pubchem_cid", "original_pert_name"])
+    return dict(
+        zip(
+            sciplex_pkl["original_pert_name"].astype(str),
+            sciplex_pkl["pubchem_cid"].astype(int).astype(str),
+        )
+    )
+
+
+def get_valid_drugs(cfg):
     """Return sci-Plex drug names with available LPM embeddings."""
-    pkl_df = pd.read_pickle(PKL_PATH)
-    sciplex_pkl = pkl_df[pkl_df["dataset"] == "sciplex3"]
-    sciplex_lpm = sciplex_pkl[sciplex_pkl["LPM_emb"].notna()].drop_duplicates(
-        subset="original_pert_name", keep="first"
-    )
-    return set(sciplex_lpm["original_pert_name"].astype(str).values)
+    pkl_df = pd.read_pickle(get_restriction_path(cfg))
+    lpm_format = get_lpm_format(cfg, restriction=True)
+    if lpm_format == "tahoe_sci_op3":
+        sciplex_pkl = pkl_df[pkl_df["dataset"] == "sciplex3"]
+        sciplex_lpm = sciplex_pkl[sciplex_pkl["LPM_emb"].notna()].drop_duplicates(
+            subset="original_pert_name", keep="first"
+        )
+        return set(sciplex_lpm["original_pert_name"].astype(str).values)
+    if lpm_format == "pubchem_symbol_lpm_style":
+        cid_to_drug = {cid: drug for drug, cid in get_sciplex_drug_to_cid().items()}
+        valid_cids = set(
+            pkl_df[pkl_df["lpm_style_embeddings"].notna()]["symbol"].astype(str).values
+        )
+        return {cid_to_drug[cid] for cid in valid_cids & set(cid_to_drug)}
+    raise ValueError(f"Unsupported lpm format: {lpm_format}")
 
 
-def load_pkl_embeddings(emb_name):
+def load_pkl_embeddings(cfg, emb_name):
     """Load embedding lookup from pkl. Returns dict: sci-Plex drug name -> np.array."""
-    pkl_df = pd.read_pickle(PKL_PATH)
-    sciplex_pkl = pkl_df[pkl_df["dataset"] == "sciplex3"]
-    sciplex_lpm = sciplex_pkl[sciplex_pkl["LPM_emb"].notna()].drop_duplicates(
-        subset="original_pert_name", keep="first"
-    )
-    lookup = {}
-    for _, row in sciplex_lpm.iterrows():
-        drug = str(row["original_pert_name"])
-        lookup[drug] = np.asarray(row[emb_name], dtype=np.float64)
-    return lookup
+    pkl_df = pd.read_pickle(get_pkl_path(cfg))
+    lpm_format = get_lpm_format(cfg)
+    if lpm_format == "tahoe_sci_op3":
+        sciplex_pkl = pkl_df[pkl_df["dataset"] == "sciplex3"]
+        sciplex_lpm = sciplex_pkl[sciplex_pkl["LPM_emb"].notna()].drop_duplicates(
+            subset="original_pert_name", keep="first"
+        )
+        lookup = {}
+        for _, row in sciplex_lpm.iterrows():
+            drug = str(row["original_pert_name"])
+            lookup[drug] = np.asarray(row[emb_name], dtype=np.float64)
+        return lookup
+    if lpm_format == "pubchem_symbol_lpm_style":
+        cid_to_drug = {cid: drug for drug, cid in get_sciplex_drug_to_cid().items()}
+        lookup = {}
+        for _, row in pkl_df[pkl_df["lpm_style_embeddings"].notna()].iterrows():
+            cid = str(row["symbol"])
+            if cid in cid_to_drug:
+                lookup[cid_to_drug[cid]] = np.asarray(
+                    row["lpm_style_embeddings"], dtype=np.float64
+                )
+        return lookup
+    raise ValueError(f"Unsupported lpm format: {lpm_format}")
 
 
 def filter_to_valid(adata, valid_drugs):
@@ -74,7 +127,8 @@ def submission_name(cfg):
     """Return the submitted model name for this config."""
     if cfg.estimator_name in ["context mean", "no change"]:
         return cfg.estimator_name + " baseline"
-    return cfg.estimator_name + "_baseline_" + cfg.emb_name
+    suffix = cfg.get("result_label", cfg.emb_name)
+    return cfg.estimator_name + "_baseline_" + suffix
 
 
 def already_submitted(cfg, n_valid_drugs):
@@ -83,7 +137,10 @@ def already_submitted(cfg, n_valid_drugs):
     fold = f"{cfg.cell_line}.{cfg.fold_id}"
     name = submission_name(cfg)
     restriction_marker = f"Restricted to {n_valid_drugs} drugs with LPM embeddings"
-    submission_dir = SUBMISSION_DIR / dataset_normalized / fold
+    source_marker = f"Embedding source: {get_pkl_path(cfg)}"
+    restriction_source_marker = f"Restriction source: {get_restriction_path(cfg)}"
+    custom_source = "lpm_source_path" in cfg or "lpm_restriction_path" in cfg
+    submission_dir = get_submission_root(cfg) / dataset_normalized / fold
     if not submission_dir.exists():
         return False
 
@@ -95,15 +152,20 @@ def already_submitted(cfg, n_valid_drugs):
             continue
 
         description = data.get("description", "") or ""
-        if data.get("name") == name and restriction_marker in description:
-            return True
+        if data.get("name") != name or restriction_marker not in description:
+            continue
+        if custom_source and (
+            source_marker not in description or restriction_source_marker not in description
+        ):
+            continue
+        return True
     return False
 
 
 @hydra.main(version_base=None, config_path="config/sciplex", config_name="config_sciplex_lfc_restricted")
 def main(cfg: DictConfig) -> None:
 
-    valid_drugs = get_valid_drugs()
+    valid_drugs = get_valid_drugs(cfg)
     if already_submitted(cfg, len(valid_drugs)):
         print(
             f"Skipping {cfg.cell_line}.{cfg.fold_id} {cfg.estimator_name} "
@@ -134,7 +196,7 @@ def main(cfg: DictConfig) -> None:
     elif cfg.emb_name in ("ECFP:2_pkl", "LPM_emb"):
         pkl_col = "ECFP:2" if cfg.emb_name == "ECFP:2_pkl" else "LPM_emb"
         emb_name = cfg.emb_name
-        emb_lookup = load_pkl_embeddings(pkl_col)
+        emb_lookup = load_pkl_embeddings(cfg, pkl_col)
         train_emb = np.stack([emb_lookup[str(drug)] for drug in train.obs["drug"].astype(str)])
         test_emb = np.stack([emb_lookup[str(drug)] for drug in test.obs["drug"].astype(str)])
     else:
@@ -202,14 +264,23 @@ def main(cfg: DictConfig) -> None:
     elif emb_name == "pca":
         description = "Embedding: PCA(n_components=100).fit_transform(np.concatenate((train.X, test.X)))\n"
     elif emb_name in ("ECFP:2_pkl", "LPM_emb"):
-        description = f"Embedding: {emb_name} from {PKL_PATH}\n"
+        description = f"Embedding: {emb_name} from {get_pkl_path(cfg)}\n"
     else:
         description = "Embedding: " + emb_name + " from " + str(paths.SCIPLEX_DRUG_EMBEDDINGS) + "\n"
     description += "Sklearn pipeline: " + str(estimator) + "\n"
     description += "Best params: " + str(estimator.best_params_) + "\n"
     description += f"Restricted to {len(valid_drugs)} drugs with LPM embeddings\n"
+    description += f"Embedding source: {get_pkl_path(cfg)}\n"
+    description += f"Embedding source format: {get_lpm_format(cfg)}\n"
+    description += f"Restriction source: {get_restriction_path(cfg)}\n"
+    description += f"Restriction source format: {get_lpm_format(cfg, restriction=True)}\n"
 
-    return task.submit(test_pred, name=name, description=description)
+    return task.submit(
+        test_pred,
+        name=name,
+        description=description,
+        submission_dir=get_submission_root(cfg),
+    )
 
 
 if __name__ == "__main__":
