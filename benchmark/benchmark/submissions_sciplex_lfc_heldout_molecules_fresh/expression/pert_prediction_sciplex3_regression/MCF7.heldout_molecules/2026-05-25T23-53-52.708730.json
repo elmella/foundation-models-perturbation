@@ -1,0 +1,15 @@
+{
+  "timestamp": "2026-05-25T23:53:52.708730",
+  "dataset": "expression/pert_prediction_sciplex3_regression",
+  "fold": "MCF7.heldout_molecules",
+  "metrics": {
+    "primary_metric": "L2",
+    "L2": 7.16098518103188,
+    "MSE": 0.004364138064070606,
+    "MAE": 0.025574176586993635,
+    "Spearman": 0.21194303787815094,
+    "Pearson": 0.2754094459592308
+  },
+  "name": "knn_baseline_erg",
+  "description": "Embedding: erg from /home/matthew-mella/valinor/foundation-models-perturbation/benchmark/data/sciplex/sciplex_drug_embeddings.h5ad\nSklearn pipeline: GridSearchCV(cv=KFold(n_splits=5, random_state=42, shuffle=True),\n             estimator=Pipeline(steps=[('imputer',\n                                        SimpleImputer(keep_empty_features=True)),\n                                       ('scaler', StandardScaler()),\n                                       ('pca', PCA(n_components=100)),\n                                       ('pseudobulk', KNeighborsRegressor())]),\n             param_grid={'pseudobulk__n_neighbors': [20, 40, 60, 80, 100]},\n             scoring=make_scorer(l2, response_method='predict'))\nBest params: {'pseudobulk__n_neighbors': 20}\nSplit: fixed molecular holdout\nTrain compounds: 153\nTest compounds: 34\nRestricted to 187 drugs with LPM embeddings\nEmbedding source: /home/matthew-mella/valinor/foundation-models-perturbation/lpm_paper10_ft_morgan_learned_fixmol_best_embeddings/sciplex\nEmbedding source format: lpm_export\nRestriction source: /home/matthew-mella/valinor/foundation-models-perturbation/lpm_paper10_ft_morgan_learned_fixmol_best_embeddings/sciplex\nRestriction source format: lpm_export\nTest split labels: test,val\n"
+}
