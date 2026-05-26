@@ -1,0 +1,50 @@
+task_name: "expression/pert-prediction-sciplex3-regression"
+lpm_source_path: "lpm_paper10_ft_morgan_learned_fixmol_best_embeddings/sciplex"
+lpm_source_format: "lpm_export"
+lpm_restriction_path: "lpm_paper10_ft_morgan_learned_fixmol_best_embeddings/sciplex"
+lpm_restriction_format: "lpm_export"
+heldout_molecules_path: "lpm_paper10_ft_morgan_learned_fixmol_best_embeddings/heldout_molecules.tsv"
+result_label: "lpm_paper10_ft_morgan_learned_fixmol_best_sciplex"
+submission_root: "benchmark/submissions_sciplex_lfc_heldout_molecules"
+
+hydra:
+  sweeper:
+    max_batch_size: 20
+    params:
+      +cell_line: "'MCF7','A549','K562'"
+      +emb_name: "
+        'LPM_emb',
+        'ChemBERTa-77M-MLM',
+        'ChemBERTa-77M-MTR',
+        'atompair',
+        'atompair-count',
+        'avalon',
+        'avalon-count',
+        'cats2D',
+        'cats3D',
+        'chatgpt',
+        'desc2D',
+        'desc3D',
+        'ecfp',
+        'ecfp-count',
+        'electroshape',
+        'erg',
+        'estate',
+        'fcfp',
+        'fcfp-count',
+        'layered',
+        'maccs',
+        'mordred',
+        'pattern',
+        'pharm2D',
+        'pharm3D',
+        'rdkit',
+        'rdkit-count',
+        'scaffoldkeys',
+        'secfp',
+        'skeys',
+        'topological',
+        'topological-count',
+        'usr',
+        'usrcat'"
+      +estimator_name: "'knn','lasso'"
