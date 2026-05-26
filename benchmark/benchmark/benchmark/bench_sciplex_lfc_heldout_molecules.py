@@ -45,7 +45,8 @@ SPLIT_ID = "heldout_molecules"
 def submission_name(cfg):
     if cfg.estimator_name in ["context mean", "no change"]:
         return cfg.estimator_name + " baseline"
-    suffix = cfg.get("result_label", cfg.emb_name)
+    lpm_label = cfg.get("lpm_result_label", "LPM_emb")
+    suffix = lpm_label if cfg.emb_name == "LPM_emb" else cfg.emb_name
     return cfg.estimator_name + "_baseline_" + suffix
 
 
