@@ -50,6 +50,9 @@ DEFAULT_EMBEDDINGS = [
 @dataclass(frozen=True)
 class DatasetSpec:
     name: str
+    heldout_dataset: str
+    lpm_dir: Path
+    lpm_name: str
     input_h5ad: Path
     embedding_h5ad: Path
     embedding_nested_dir: str
@@ -96,12 +99,19 @@ def parse_args() -> argparse.Namespace:
         help="Which L1000 phase datasets to evaluate.",
     )
     parser.add_argument(
-        "--lpm-dir",
+        "--phase1-lpm-dir",
         type=Path,
         default=Path("lpm_paper10_ft_morgan_learned_fixmol_best_embeddings/lincs_phase1"),
-        help="LPM export directory containing molecule_metadata.tsv and molecule_embeddings.npy.",
+        help="Phase 1 LPM export directory containing molecule_metadata.tsv and molecule_embeddings.npy.",
     )
-    parser.add_argument("--lpm-name", default="lpm_ft_morgan_learned_fixmol_lincs_phase1")
+    parser.add_argument(
+        "--phase2-lpm-dir",
+        type=Path,
+        default=Path("lpm_paper10_ft_morgan_learned_fixmol_best_embeddings/lincs_phase2"),
+        help="Phase 2 LPM export directory containing molecule_metadata.tsv and molecule_embeddings.npy.",
+    )
+    parser.add_argument("--phase1-lpm-name", default="lpm_ft_morgan_learned_fixmol_lincs_phase1")
+    parser.add_argument("--phase2-lpm-name", default="lpm_ft_morgan_learned_fixmol_lincs_phase2")
     parser.add_argument(
         "--embeddings",
         nargs="+",
@@ -129,6 +139,23 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--n-splits", type=int, default=5)
     parser.add_argument("--inner-splits", type=int, default=5)
+    parser.add_argument(
+        "--heldout-molecules-path",
+        type=Path,
+        default=Path("lpm_paper10_ft_morgan_learned_fixmol_best_embeddings/heldout_molecules.tsv"),
+    )
+    parser.add_argument(
+        "--test-split-labels",
+        nargs="+",
+        default=["test"],
+        help="Heldout split labels to evaluate. Default is test only, so val compounds stay in training.",
+    )
+    parser.add_argument(
+        "--split-mode",
+        choices=["fixed", "kfold"],
+        default="fixed",
+        help="fixed uses heldout_molecules.tsv; kfold uses ad hoc molecule CV.",
+    )
     parser.add_argument("--min-compounds", type=int, default=50)
     parser.add_argument("--max-contexts", type=int, default=None)
     parser.add_argument("--chunk-size", type=int, default=8192)
@@ -290,6 +317,37 @@ def append_rows(path: Path, rows: list[dict]) -> None:
     df.to_csv(path, mode="a", header=not path.exists(), index=False)
 
 
+def load_test_compounds(args: argparse.Namespace, spec: DatasetSpec) -> set[str]:
+    heldout = pd.read_csv(args.heldout_molecules_path, sep="\t")
+    split_labels = {str(label).lower() for label in args.test_split_labels}
+    mask = (
+        heldout["dataset"].astype(str).str.lower().eq(spec.heldout_dataset.lower())
+        & heldout["split"].astype(str).str.lower().isin(split_labels)
+    )
+    return set(heldout.loc[mask, "molecule"].astype(str))
+
+
+def split_indices(
+    compounds: np.ndarray,
+    test_compounds: set[str],
+    args: argparse.Namespace,
+) -> list[tuple[int, np.ndarray, np.ndarray, str]]:
+    if args.split_mode == "fixed":
+        is_test = np.isin(compounds.astype(str), list(test_compounds))
+        train_idx = np.flatnonzero(~is_test)
+        test_idx = np.flatnonzero(is_test)
+        return [(0, train_idx, test_idx, "fixed_test")]
+
+    outer_splits = min(args.n_splits, len(compounds))
+    if outer_splits < 2:
+        return []
+    splitter = KFold(n_splits=outer_splits, shuffle=True, random_state=args.random_seed)
+    return [
+        (fold, train_idx, test_idx, "kfold")
+        for fold, (train_idx, test_idx) in enumerate(splitter.split(compounds))
+    ]
+
+
 def resolve_existing_path(path: Path, fallbacks: list[Path], label: str) -> Path:
     if path.exists():
         return path
@@ -349,10 +407,15 @@ def evaluate_dataset(
     row_positions = np.flatnonzero(mask.to_numpy())
 
     generated_index, generated = load_generated_embeddings(embedding_h5ad, embedding_names)
-    lpm_index, lpm = load_lpm_embeddings(args.lpm_dir, args.lpm_name)
+    lpm_index, lpm = load_lpm_embeddings(spec.lpm_dir, spec.lpm_name)
     embeddings = {**generated, **lpm}
     indices = {name: generated_index for name in generated}
     indices.update({name: lpm_index for name in lpm})
+    test_compounds = load_test_compounds(args, spec)
+    print(
+        f"{spec.name}: using {len(test_compounds)} predefined test compounds "
+        f"from {args.heldout_molecules_path}"
+    )
 
     contexts = obs["_context"].value_counts()
     contexts = contexts.index.tolist()
@@ -386,12 +449,14 @@ def evaluate_dataset(
             y_keep = y[keep]
             compounds_keep = np.asarray(compounds, dtype=object)[keep]
             counts_keep = replicate_counts[keep]
-            outer_splits = min(args.n_splits, len(compounds_keep))
-            if outer_splits < 2:
-                continue
-            splitter = KFold(n_splits=outer_splits, shuffle=True, random_state=args.random_seed)
-
-            for fold, (train_idx, test_idx) in enumerate(splitter.split(x)):
+            splits = split_indices(compounds_keep.astype(str), test_compounds, args)
+            for fold, train_idx, test_idx, split_name in splits:
+                if len(train_idx) < args.min_compounds or len(test_idx) == 0:
+                    print(
+                        f"Skipping {spec.name} {context} {embedding_name} {split_name}: "
+                        f"train={len(train_idx)} test={len(test_idx)}"
+                    )
+                    continue
                 for estimator_name in args.estimators:
                     key = (spec.name, str(context), estimator_name, embedding_name, int(fold))
                     if args.resume and key in completed:
@@ -411,6 +476,8 @@ def evaluate_dataset(
                         "estimator": estimator_name,
                         "embedding": embedding_name,
                         "fold": fold,
+                        "split": split_name,
+                        "test_split_labels": ",".join(args.test_split_labels),
                         "l2": float(per_sample_l2.mean()),
                         "n_train_compounds": int(len(train_idx)),
                         "n_test_compounds": int(len(test_idx)),
@@ -439,12 +506,18 @@ def main() -> None:
     specs = {
         "phase1": DatasetSpec(
             "l1000_phase1",
+            "LINCS_phase1_level3_epsilon",
+            args.phase1_lpm_dir,
+            args.phase1_lpm_name,
             args.phase1_h5ad,
             args.phase1_embeddings,
             "l1000_phase1_level3_deg_ready_landmark_processed",
         ),
         "phase2": DatasetSpec(
             "l1000_phase2",
+            "LINCS_phase2_level3",
+            args.phase2_lpm_dir,
+            args.phase2_lpm_name,
             args.phase2_h5ad,
             args.phase2_embeddings,
             "l1000_phase2_level3_deg_ready_landmark_processed",
