@@ -1,0 +1,15 @@
+{
+  "timestamp": "2026-05-26T08:59:33.424171",
+  "dataset": "expression/pert_prediction_tahoe_regression",
+  "fold": "CVCL_1731.heldout_molecules_test",
+  "metrics": {
+    "primary_metric": "L2",
+    "L2": 5.515320717538541,
+    "MSE": 0.0022120388515081972,
+    "MAE": 0.01764812185129239,
+    "Spearman": 0.32338448359097627,
+    "Pearson": 0.4488006139192216
+  },
+  "name": "knn_baseline_chatgpt",
+  "description": "Embedding: chatgpt from /home/matthew-mella/valinor/foundation-models-perturbation/benchmark/data/tahoe/tahoe_drug_embeddings.h5ad\nSklearn pipeline: GridSearchCV(cv=KFold(n_splits=5, random_state=42, shuffle=True),\n             estimator=Pipeline(steps=[('scaler', StandardScaler()),\n                                       ('pca', PCA(n_components=100)),\n                                       ('pseudobulk', KNeighborsRegressor())]),\n             param_grid={'pseudobulk__n_neighbors': [20, 40, 60, 80, 100]},\n             scoring=make_scorer(l2, response_method='predict'))\nBest params: {'pseudobulk__n_neighbors': 100}\nSplit: fixed molecular holdout\nTrain compounds: 344\nTest compounds: 34\nRestricted to 378 compounds with LPM embeddings\nEmbedding source: /home/matthew-mella/valinor/foundation-models-perturbation/lpm_paper10_ft_morgan_learned_fixmol_best_embeddings/tahoe100\nEmbedding source format: lpm_export\nRestriction source: /home/matthew-mella/valinor/foundation-models-perturbation/lpm_paper10_ft_morgan_learned_fixmol_best_embeddings/tahoe100\nRestriction source format: lpm_export\nTest split labels: test\n"
+}

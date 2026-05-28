@@ -1,0 +1,15 @@
+{
+  "timestamp": "2026-05-26T08:25:42.596028",
+  "dataset": "expression/pert_prediction_tahoe_regression",
+  "fold": "CVCL_0428.heldout_molecules_test",
+  "metrics": {
+    "primary_metric": "L2",
+    "L2": 5.854881819766952,
+    "MSE": 0.0026525812320867667,
+    "MAE": 0.018180427112121013,
+    "Spearman": 0.3305180466121349,
+    "Pearson": 0.4547637214209793
+  },
+  "name": "lasso_baseline_topological",
+  "description": "Embedding: topological from /home/matthew-mella/valinor/foundation-models-perturbation/benchmark/data/tahoe/tahoe_drug_embeddings.h5ad\nSklearn pipeline: GridSearchCV(cv=KFold(n_splits=5, random_state=42, shuffle=True),\n             estimator=Pipeline(steps=[('scaler', StandardScaler()),\n                                       ('pca', PCA(n_components=100)),\n                                       ('pseudobulk', Lasso())]),\n             param_grid={'pseudobulk__alpha': [0.001, 0.01, 0.1, 1]},\n             scoring=make_scorer(l2, response_method='predict'))\nBest params: {'pseudobulk__alpha': 0.1}\nSplit: fixed molecular holdout\nTrain compounds: 344\nTest compounds: 34\nRestricted to 378 compounds with LPM embeddings\nEmbedding source: /home/matthew-mella/valinor/foundation-models-perturbation/lpm_paper10_ft_morgan_learned_fixmol_best_embeddings/tahoe100\nEmbedding source format: lpm_export\nRestriction source: /home/matthew-mella/valinor/foundation-models-perturbation/lpm_paper10_ft_morgan_learned_fixmol_best_embeddings/tahoe100\nRestriction source format: lpm_export\nTest split labels: test\n"
+}
