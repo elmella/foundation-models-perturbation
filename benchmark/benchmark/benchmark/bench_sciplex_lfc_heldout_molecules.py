@@ -12,6 +12,7 @@ Usage:
 """
 
 import json
+import sys
 
 import anndata as ad
 import hydra
@@ -43,6 +44,13 @@ from benchmark.benchmark.bench_sciplex_lfc_restricted import (
 )
 
 SPLIT_ID = "heldout_molecules"
+
+
+def normalize_resume_arg() -> None:
+    """Allow argparse-style --resume with Hydra overrides."""
+    if "--resume" not in sys.argv:
+        return
+    sys.argv[:] = ["+resume=true" if arg == "--resume" else arg for arg in sys.argv]
 
 
 def submission_name(cfg):
@@ -214,7 +222,7 @@ def embedding_description(cfg, emb_name):
 )
 def main(cfg: DictConfig) -> None:
     valid_drugs = get_valid_drugs(cfg)
-    if already_submitted(cfg, len(valid_drugs)):
+    if cfg.get("resume", True) and already_submitted(cfg, len(valid_drugs)):
         print(
             f"Skipping {cfg.cell_line}.{SPLIT_ID} {cfg.estimator_name} "
             f"{cfg.emb_name}: already submitted for fixed molecular holdout"
@@ -260,4 +268,5 @@ def main(cfg: DictConfig) -> None:
 
 
 if __name__ == "__main__":
+    normalize_resume_arg()
     main()

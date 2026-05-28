@@ -12,6 +12,7 @@ Usage:
 """
 
 import json
+import sys
 from pathlib import Path
 
 import anndata as ad
@@ -36,6 +37,13 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 LPM_EXPORT_ROOT = REPO_ROOT / "lpm_paper10_ft_morgan_learned_fixmol_best_embeddings"
 SPLIT_ID = "heldout_molecules"
 TAHOE_DATASET_ALIASES = {"tahoe100", "tahoe"}
+
+
+def normalize_resume_arg() -> None:
+    """Allow argparse-style --resume with Hydra overrides."""
+    if "--resume" not in sys.argv:
+        return
+    sys.argv[:] = ["+resume=true" if arg == "--resume" else arg for arg in sys.argv]
 
 
 def resolve_repo_path(path):
@@ -269,7 +277,7 @@ def embedding_description(cfg, emb_name):
 )
 def main(cfg: DictConfig) -> None:
     valid_cids = get_valid_cids(cfg)
-    if already_submitted(cfg, len(valid_cids)):
+    if cfg.get("resume", True) and already_submitted(cfg, len(valid_cids)):
         print(
             f"Skipping {cfg.cell_line}.{SPLIT_ID} {cfg.estimator_name} "
             f"{cfg.emb_name}: already submitted for fixed molecular holdout"
@@ -315,4 +323,5 @@ def main(cfg: DictConfig) -> None:
 
 
 if __name__ == "__main__":
+    normalize_resume_arg()
     main()
