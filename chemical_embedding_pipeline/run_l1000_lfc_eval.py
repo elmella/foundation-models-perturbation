@@ -21,6 +21,7 @@ from chemical_embedding_pipeline.progress import progress
 
 
 DATA_EMBEDDING_ROOT = Path("data/generated_lfc_embeddings/l1000")
+TEMP_DATA_ROOT = Path("data/theislab_temp")
 
 DEFAULT_EMBEDDINGS = [
     "ChemBERTa-77M-MLM",
@@ -308,6 +309,13 @@ def embedding_fallbacks(filename: str, nested_dir: str) -> list[Path]:
     ]
 
 
+def expression_fallbacks(filename: str, nested_dir: str) -> list[Path]:
+    return [
+        TEMP_DATA_ROOT / filename,
+        TEMP_DATA_ROOT / nested_dir / filename,
+    ]
+
+
 def evaluate_dataset(
     spec: DatasetSpec,
     args: argparse.Namespace,
@@ -316,7 +324,7 @@ def evaluate_dataset(
 ) -> list[dict]:
     input_h5ad = resolve_existing_path(
         spec.input_h5ad,
-        [],
+        expression_fallbacks(spec.input_h5ad.name, spec.input_h5ad.parent.name),
         (
             f"{spec.name} expression H5AD. This is the original L1000 data, not the "
             "compound embedding H5AD"
