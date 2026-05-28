@@ -1,0 +1,25 @@
+[project]
+name = "foundation-models-perturbation-chemical-embeddings"
+version = "0.1.0"
+description = "Utilities for generating compound embeddings for the LFC benchmark datasets."
+requires-python = ">=3.11"
+dependencies = [
+    "anndata>=0.10",
+    "huggingface-hub>=0.23",
+    "molfeat>=0.10",
+    "numpy>=1.26",
+    "openai>=1.0",
+    "pandas>=2.0",
+    "rdkit>=2024.9",
+    "scipy>=1.11",
+    "torch>=2.2",
+    "tqdm>=4.66",
+    "transformers>=4.40",
+]
+
+[tool.setuptools.packages.find]
+include = ["chemical_embedding_pipeline*"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
