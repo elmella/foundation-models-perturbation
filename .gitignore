@@ -34,3 +34,6 @@ generated_chemical_embeddings/
 .env
 
 data
+# Python cache
+__pycache__/
+*.py[cod]
