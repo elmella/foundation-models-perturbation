@@ -51,6 +51,7 @@ class DatasetSpec:
     name: str
     input_h5ad: Path
     embedding_h5ad: Path
+    embedding_nested_dir: str
 
 
 def parse_args() -> argparse.Namespace:
@@ -300,8 +301,9 @@ def resolve_existing_path(path: Path, fallbacks: list[Path], label: str) -> Path
 
 def embedding_fallbacks(filename: str, nested_dir: str) -> list[Path]:
     return [
-        Path("generated_lfc_embeddings/l1000") / nested_dir / filename,
+        DATA_EMBEDDING_ROOT / filename,
         DATA_EMBEDDING_ROOT / nested_dir / filename,
+        Path("generated_lfc_embeddings/l1000") / nested_dir / filename,
         Path("generated_lfc_embeddings/l1000") / filename,
     ]
 
@@ -322,7 +324,7 @@ def evaluate_dataset(
     )
     embedding_h5ad = resolve_existing_path(
         spec.embedding_h5ad,
-        embedding_fallbacks(spec.embedding_h5ad.name, spec.embedding_h5ad.parent.name),
+        embedding_fallbacks(spec.embedding_h5ad.name, spec.embedding_nested_dir),
         f"{spec.name} compound embedding H5AD",
     )
     print(f"Loading {spec.name}: {input_h5ad}")
@@ -427,8 +429,18 @@ def main() -> None:
     args = parse_args()
     embedding_names = DEFAULT_EMBEDDINGS if args.embeddings == ["all"] else args.embeddings
     specs = {
-        "phase1": DatasetSpec("l1000_phase1", args.phase1_h5ad, args.phase1_embeddings),
-        "phase2": DatasetSpec("l1000_phase2", args.phase2_h5ad, args.phase2_embeddings),
+        "phase1": DatasetSpec(
+            "l1000_phase1",
+            args.phase1_h5ad,
+            args.phase1_embeddings,
+            "l1000_phase1_level3_deg_ready_landmark_processed",
+        ),
+        "phase2": DatasetSpec(
+            "l1000_phase2",
+            args.phase2_h5ad,
+            args.phase2_embeddings,
+            "l1000_phase2_level3_deg_ready_landmark_processed",
+        ),
     }
     completed = existing_keys(args.output_csv) if args.resume else set()
     final_rows: list[dict] = []
