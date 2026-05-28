@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -51,7 +52,7 @@ DEFAULT_EMBEDDINGS = [
 class DatasetSpec:
     name: str
     heldout_dataset: str
-    lpm_dir: Path
+    lpm_dir: Path | None
     lpm_name: str
     input_h5ad: Path
     embedding_h5ad: Path
@@ -139,6 +140,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--n-splits", type=int, default=5)
     parser.add_argument("--inner-splits", type=int, default=5)
+    parser.add_argument(
+        "--n-jobs",
+        type=int,
+        default=1,
+        help="Number of sklearn/joblib workers for inner GridSearchCV fits.",
+    )
     parser.add_argument(
         "--heldout-molecules-path",
         type=Path,
@@ -266,7 +273,7 @@ def l2(y, y_pred):
     return -np.linalg.norm(y - y_pred, axis=1).mean()
 
 
-def build_estimator(name: str, n_train: int, n_features: int, inner_splits: int):
+def build_estimator(name: str, n_train: int, n_features: int, inner_splits: int, n_jobs: int):
     n_inner_train = max(1, int(n_train * (inner_splits - 1) / inner_splits))
     pca_n_components = min(100, n_inner_train - 1, n_features)
     if name == "knn":
@@ -291,24 +298,50 @@ def build_estimator(name: str, n_train: int, n_features: int, inner_splits: int)
         grid,
         cv=KFold(n_splits=inner_splits, shuffle=True, random_state=42),
         scoring=make_scorer(l2),
+        n_jobs=n_jobs,
     )
 
 
-def existing_keys(path: Path) -> set[tuple[str, str, str, str, int]]:
+def existing_keys(path: Path) -> set[tuple[str, str, str, str, int, str, str]]:
     if not path.exists():
         return set()
-    df = pd.read_csv(path)
-    if df.empty:
-        return set()
-    return set(
-        zip(
-            df["dataset"].astype(str),
-            df["context"].astype(str),
-            df["estimator"].astype(str),
-            df["embedding"].astype(str),
-            df["fold"].astype(int),
-        )
-    )
+    fixed_header = [
+        "dataset",
+        "context",
+        "estimator",
+        "embedding",
+        "fold",
+        "split",
+        "test_split_labels",
+        "l2",
+        "n_train_compounds",
+        "n_test_compounds",
+        "n_total_compounds",
+        "n_context_rows",
+        "mean_test_replicates",
+        "best_params",
+    ]
+    keys = set()
+    with path.open(newline="") as handle:
+        reader = csv.reader(handle)
+        for row in reader:
+            if not row or row[0] == "dataset":
+                continue
+            if len(row) != len(fixed_header):
+                continue
+            record = dict(zip(fixed_header, row))
+            keys.add(
+                (
+                    record["dataset"],
+                    record["context"],
+                    record["estimator"],
+                    record["embedding"],
+                    int(record["fold"]),
+                    record["split"],
+                    record["test_split_labels"],
+                )
+            )
+    return keys
 
 
 def append_rows(path: Path, rows: list[dict]) -> None:
@@ -378,7 +411,7 @@ def evaluate_dataset(
     spec: DatasetSpec,
     args: argparse.Namespace,
     embedding_names: list[str],
-    completed: set[tuple[str, str, str, str, int]],
+    completed: set[tuple[str, str, str, str, int, str, str]],
 ) -> list[dict]:
     input_h5ad = resolve_existing_path(
         spec.input_h5ad,
@@ -407,10 +440,12 @@ def evaluate_dataset(
     row_positions = np.flatnonzero(mask.to_numpy())
 
     generated_index, generated = load_generated_embeddings(embedding_h5ad, embedding_names)
-    lpm_index, lpm = load_lpm_embeddings(spec.lpm_dir, spec.lpm_name)
-    embeddings = {**generated, **lpm}
+    embeddings = dict(generated)
     indices = {name: generated_index for name in generated}
-    indices.update({name: lpm_index for name in lpm})
+    if spec.lpm_dir is not None:
+        lpm_index, lpm = load_lpm_embeddings(spec.lpm_dir, spec.lpm_name)
+        embeddings.update(lpm)
+        indices.update({name: lpm_index for name in lpm})
     test_compounds = load_test_compounds(args, spec)
     print(
         f"{spec.name}: using {len(test_compounds)} predefined test compounds "
@@ -458,7 +493,16 @@ def evaluate_dataset(
                     )
                     continue
                 for estimator_name in args.estimators:
-                    key = (spec.name, str(context), estimator_name, embedding_name, int(fold))
+                    split_labels = ",".join(args.test_split_labels)
+                    key = (
+                        spec.name,
+                        str(context),
+                        estimator_name,
+                        embedding_name,
+                        int(fold),
+                        split_name,
+                        split_labels,
+                    )
                     if args.resume and key in completed:
                         continue
                     model = build_estimator(
@@ -466,6 +510,7 @@ def evaluate_dataset(
                         n_train=len(train_idx),
                         n_features=x.shape[1],
                         inner_splits=min(args.inner_splits, len(train_idx)),
+                        n_jobs=args.n_jobs,
                     )
                     model.fit(x[train_idx], y_keep[train_idx])
                     pred = model.predict(x[test_idx])
@@ -477,7 +522,7 @@ def evaluate_dataset(
                         "embedding": embedding_name,
                         "fold": fold,
                         "split": split_name,
-                        "test_split_labels": ",".join(args.test_split_labels),
+                        "test_split_labels": split_labels,
                         "l2": float(per_sample_l2.mean()),
                         "n_train_compounds": int(len(train_idx)),
                         "n_test_compounds": int(len(test_idx)),
@@ -492,7 +537,15 @@ def evaluate_dataset(
                 if len(rows) >= 20:
                     append_rows(args.output_csv, rows)
                     completed.update(
-                        (r["dataset"], r["context"], r["estimator"], r["embedding"], int(r["fold"]))
+                        (
+                            r["dataset"],
+                            r["context"],
+                            r["estimator"],
+                            r["embedding"],
+                            int(r["fold"]),
+                            r["split"],
+                            r["test_split_labels"],
+                        )
                         for r in rows
                     )
                     rows = []
