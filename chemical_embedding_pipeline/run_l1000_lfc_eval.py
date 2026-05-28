@@ -20,6 +20,8 @@ from sklearn.preprocessing import StandardScaler
 from chemical_embedding_pipeline.progress import progress
 
 
+DATA_EMBEDDING_ROOT = Path("data/generated_lfc_embeddings/l1000")
+
 DEFAULT_EMBEDDINGS = [
     "ChemBERTa-77M-MLM",
     "ChemBERTa-77M-MTR",
@@ -67,7 +69,7 @@ def parse_args() -> argparse.Namespace:
         "--phase1-embeddings",
         type=Path,
         default=Path(
-            "generated_lfc_embeddings/l1000/l1000_phase1_level3_deg_ready_landmark_processed/"
+            "data/generated_lfc_embeddings/l1000/"
             "l1000_phase1_level3_deg_ready_landmark_processed_compound_embeddings.h5ad"
         ),
     )
@@ -80,7 +82,7 @@ def parse_args() -> argparse.Namespace:
         "--phase2-embeddings",
         type=Path,
         default=Path(
-            "generated_lfc_embeddings/l1000/l1000_phase2_level3_deg_ready_landmark_processed/"
+            "data/generated_lfc_embeddings/l1000/"
             "l1000_phase2_level3_deg_ready_landmark_processed_compound_embeddings.h5ad"
         ),
     )
@@ -286,14 +288,45 @@ def append_rows(path: Path, rows: list[dict]) -> None:
     df.to_csv(path, mode="a", header=not path.exists(), index=False)
 
 
+def resolve_existing_path(path: Path, fallbacks: list[Path], label: str) -> Path:
+    if path.exists():
+        return path
+    for fallback in fallbacks:
+        if fallback.exists():
+            return fallback
+    options = "\n".join(f"  - {candidate}" for candidate in [path, *fallbacks])
+    raise FileNotFoundError(f"Could not find {label}. Checked:\n{options}")
+
+
+def embedding_fallbacks(filename: str, nested_dir: str) -> list[Path]:
+    return [
+        Path("generated_lfc_embeddings/l1000") / nested_dir / filename,
+        DATA_EMBEDDING_ROOT / nested_dir / filename,
+        Path("generated_lfc_embeddings/l1000") / filename,
+    ]
+
+
 def evaluate_dataset(
     spec: DatasetSpec,
     args: argparse.Namespace,
     embedding_names: list[str],
     completed: set[tuple[str, str, str, str, int]],
 ) -> list[dict]:
-    print(f"Loading {spec.name}: {spec.input_h5ad}")
-    adata = ad.read_h5ad(spec.input_h5ad, backed="r")
+    input_h5ad = resolve_existing_path(
+        spec.input_h5ad,
+        [],
+        (
+            f"{spec.name} expression H5AD. This is the original L1000 data, not the "
+            "compound embedding H5AD"
+        ),
+    )
+    embedding_h5ad = resolve_existing_path(
+        spec.embedding_h5ad,
+        embedding_fallbacks(spec.embedding_h5ad.name, spec.embedding_h5ad.parent.name),
+        f"{spec.name} compound embedding H5AD",
+    )
+    print(f"Loading {spec.name}: {input_h5ad}")
+    adata = ad.read_h5ad(input_h5ad, backed="r")
     obs = adata.obs.copy()
     if args.compound_col not in obs.columns:
         raise ValueError(f"{spec.input_h5ad} is missing compound column {args.compound_col!r}")
@@ -305,7 +338,7 @@ def evaluate_dataset(
     obs["_context"] = context_label(obs, args.context_cols)
     row_positions = np.flatnonzero(mask.to_numpy())
 
-    generated_index, generated = load_generated_embeddings(spec.embedding_h5ad, embedding_names)
+    generated_index, generated = load_generated_embeddings(embedding_h5ad, embedding_names)
     lpm_index, lpm = load_lpm_embeddings(args.lpm_dir, args.lpm_name)
     embeddings = {**generated, **lpm}
     indices = {name: generated_index for name in generated}

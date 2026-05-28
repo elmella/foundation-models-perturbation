@@ -129,7 +129,11 @@ uv run python -m chemical_embedding_pipeline.run_l1000_lfc_eval \
 
 By default this evaluates each `cell_type` as a separate context, excludes
 controls, uses 5 outer molecule-heldout folds, and writes rows incrementally so
-the run can be resumed. For a quick smoke test, narrow the run:
+the run can be resumed. The expression H5ADs are read from
+`data/theislab_temp/...`; the compound embedding H5ADs are read from
+`data/generated_lfc_embeddings/l1000/...`, with fallbacks to the original
+`generated_lfc_embeddings/l1000/...` layout. For a quick smoke test, narrow the
+run:
 
 ```bash
 uv run python -m chemical_embedding_pipeline.run_l1000_lfc_eval \
