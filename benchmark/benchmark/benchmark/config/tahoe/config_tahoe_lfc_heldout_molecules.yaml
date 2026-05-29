@@ -4,7 +4,6 @@ lpm_restriction_path: "lpm_paper10_ft_morgan_learned_fixmol_best_embeddings/taho
 heldout_molecules_path: "lpm_paper10_ft_morgan_learned_fixmol_best_embeddings/heldout_molecules.tsv"
 test_split_labels:
   - "test"
-  - "val"
 submission_root: "benchmark/submissions_tahoe_lfc_heldout_molecules"
 
 hydra:
