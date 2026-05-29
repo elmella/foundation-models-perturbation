@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -10,7 +11,9 @@ import anndata as ad
 import numpy as np
 import pandas as pd
 from scipy import sparse
+from scipy.stats import pearsonr, spearmanr
 from sklearn.decomposition import PCA
+from sklearn.dummy import DummyRegressor
 from sklearn.linear_model import Lasso
 from sklearn.metrics import make_scorer
 from sklearn.model_selection import GridSearchCV, KFold
@@ -46,6 +49,8 @@ DEFAULT_EMBEDDINGS = [
     "secfp",
     "topological",
 ]
+
+SPECIAL_EMBEDDINGS = {"random", "pca"}
 
 
 @dataclass(frozen=True)
@@ -113,11 +118,15 @@ def load_generated_embeddings(path: Path, names: list[str]) -> tuple[pd.Index, d
     emb = ad.read_h5ad(path, backed="r")
     try:
         available = set(emb.obsm.keys())
-        missing = [name for name in names if name not in available]
+        missing = [name for name in names if name not in available and name not in SPECIAL_EMBEDDINGS]
         if missing:
             raise ValueError(f"{path} is missing embeddings: {missing}")
         obs_names = pd.Index(emb.obs_names.astype(str))
-        matrices = {name: np.asarray(emb.obsm[name], dtype=np.float64) for name in names}
+        matrices = {
+            name: np.asarray(emb.obsm[name], dtype=np.float64)
+            for name in names
+            if name not in SPECIAL_EMBEDDINGS
+        }
     finally:
         emb.file.close()
     return obs_names, matrices
@@ -183,21 +192,26 @@ def l2(y, y_pred):
     return -np.linalg.norm(y - y_pred, axis=1).mean()
 
 
-def build_estimator(name: str, n_train: int, n_features: int, inner_splits: int, n_jobs: int):
+def build_estimator(name: str, n_train: int, n_features: int, inner_splits: int, n_jobs: int, *, use_pca: bool = True):
     n_inner_train = max(1, int(n_train * (inner_splits - 1) / inner_splits))
     pca_n_components = min(100, n_inner_train - 1, n_features)
+    if name == "no change":
+        return DummyRegressor(strategy="constant", constant=np.zeros(n_features))
+    if name == "context mean":
+        return DummyRegressor()
     if name == "knn":
         steps = [("scaler", StandardScaler())]
-        if pca_n_components >= 1:
+        if use_pca and pca_n_components >= 1:
             steps.append(("pca", PCA(n_components=pca_n_components)))
         steps.append(("pseudobulk", KNeighborsRegressor()))
-        valid_ks = [k for k in [20, 40, 60, 80, 100] if k < n_inner_train]
+        max_k = n_inner_train - 1
+        valid_ks = [k for k in [20, 40, 60, 80, 100] if k < max_k]
         if not valid_ks:
-            valid_ks = [max(1, n_inner_train - 1)]
+            valid_ks = [max(1, max_k)]
         grid = {"pseudobulk__n_neighbors": sorted(set(valid_ks))}
     elif name == "lasso":
         steps = [("scaler", StandardScaler())]
-        if pca_n_components >= 1:
+        if use_pca and pca_n_components >= 1:
             steps.append(("pca", PCA(n_components=pca_n_components)))
         steps.append(("pseudobulk", Lasso(max_iter=5000)))
         grid = {"pseudobulk__alpha": [1e-3, 1e-2, 1e-1, 1]}
@@ -233,13 +247,12 @@ def existing_keys(path: Path) -> set[tuple[str, str, str, str, int, str, str]]:
     ]
     keys = set()
     with path.open(newline="") as handle:
-        reader = csv.reader(handle)
-        for row in reader:
-            if not row or row[0] == "dataset":
+        reader = csv.DictReader(handle)
+        for record in reader:
+            if not record or not record.get("dataset"):
                 continue
-            if len(row) != len(fixed_header):
+            if not all(column in record and record[column] not in (None, "") for column in fixed_header[:7]):
                 continue
-            record = dict(zip(fixed_header, row))
             keys.add(
                 (
                     record["dataset"],
@@ -252,6 +265,24 @@ def existing_keys(path: Path) -> set[tuple[str, str, str, str, int, str, str]]:
                 )
             )
     return keys
+
+
+def update_completed(
+    completed: set[tuple[str, str, str, str, int, str, str]],
+    rows: list[dict],
+) -> None:
+    completed.update(
+        (
+            r["dataset"],
+            r["context"],
+            r["estimator"],
+            r["embedding"],
+            int(r["fold"]),
+            r["split"],
+            r["test_split_labels"],
+        )
+        for r in rows
+    )
 
 
 def append_rows(path: Path, rows: list[dict]) -> None:
@@ -293,6 +324,41 @@ def split_indices(
         (fold, train_idx, test_idx, "kfold")
         for fold, (train_idx, test_idx) in enumerate(splitter.split(compounds))
     ]
+
+
+def finite_corr(fn, y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    values = []
+    for i in range(y_pred.shape[0]):
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                value = fn(y_true[i, :], y_pred[i, :])[0]
+        except Exception:
+            value = np.nan
+        values.append(value)
+    finite = [value for value in values if np.isfinite(value)]
+    return float(np.mean(finite)) if finite else float("nan")
+
+
+def regression_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, float | str]:
+    return {
+        "primary_metric": "L2",
+        "L2": float(np.mean(np.linalg.norm(y_pred - y_true, ord=2, axis=1))),
+        "MSE": float(np.mean(np.square(y_pred - y_true))),
+        "MAE": float(np.mean(np.abs(y_pred - y_true))),
+        "Spearman": finite_corr(spearmanr, y_true, y_pred),
+        "Pearson": finite_corr(pearsonr, y_true, y_pred),
+    }
+
+
+def special_embedding_matrix(name: str, y: np.ndarray, random_seed: int) -> np.ndarray | None:
+    if name == "random":
+        rng = np.random.default_rng(random_seed)
+        return rng.random((y.shape[0], 100))
+    if name == "pca":
+        n_components = min(100, y.shape[0], y.shape[1])
+        return PCA(n_components=n_components).fit_transform(y)
+    return None
 
 
 def resolve_existing_path(path: Path, fallbacks: list[Path], label: str) -> Path:
@@ -360,10 +426,12 @@ def evaluate_dataset(
     generated_index, generated = load_generated_embeddings(embedding_h5ad, embedding_names)
     embeddings = dict(generated)
     indices = {name: generated_index for name in generated}
+    lpm_index: pd.Index | None = None
     if spec.lpm_dir is not None:
         lpm_index, lpm = load_lpm_embeddings(spec.lpm_dir, spec.lpm_name, index_map=sciplex_cid_to_drug)
         embeddings.update(lpm)
         indices.update({name: lpm_index for name in lpm})
+    special_names = [name for name in embedding_names if name in SPECIAL_EMBEDDINGS]
     test_compounds = load_test_compounds(args, spec)
     print(
         f"{spec.name}: using {len(test_compounds)} predefined test compounds "
@@ -386,13 +454,36 @@ def evaluate_dataset(
         )
         if len(compounds) < args.min_compounds:
             continue
+        compounds_array = np.asarray(compounds, dtype=object)
+        if getattr(args, "restrict_to_lpm", True):
+            if lpm_index is None:
+                raise ValueError("--restrict-to-lpm requires --lpm-dir.")
+            lpm_keep = compounds_array.astype(str)
+            lpm_keep = np.isin(lpm_keep, lpm_index.astype(str))
+            if int(lpm_keep.sum()) < args.min_compounds:
+                print(
+                    f"Skipping {spec.name} {context}: only {int(lpm_keep.sum())} compounds "
+                    "after LPM restriction"
+                )
+                continue
+            compounds = compounds_array[lpm_keep].astype(str).tolist()
+            y = y[lpm_keep]
+            replicate_counts = replicate_counts[lpm_keep]
+
+        context_embeddings = dict(embeddings)
+        context_indices = dict(indices)
+        for special_name in special_names:
+            special_matrix = special_embedding_matrix(special_name, y, args.random_seed)
+            if special_matrix is not None:
+                context_embeddings[special_name] = special_matrix
+                context_indices[special_name] = pd.Index(pd.Index(compounds).astype(str))
 
         for embedding_name, matrix in progress(
-            embeddings.items(),
+            context_embeddings.items(),
             desc=f"{spec.name} {context} embeddings",
             unit="embedding",
         ):
-            keep, x = align_embeddings(compounds, indices[embedding_name], matrix)
+            keep, x = align_embeddings(compounds, context_indices[embedding_name], matrix)
             if keep.sum() < args.min_compounds:
                 print(
                     f"Skipping {spec.name} {context} {embedding_name}: "
@@ -423,16 +514,27 @@ def evaluate_dataset(
                     )
                     if args.resume and key in completed:
                         continue
-                    model = build_estimator(
-                        estimator_name,
-                        n_train=len(train_idx),
-                        n_features=x.shape[1],
-                        inner_splits=min(args.inner_splits, len(train_idx)),
-                        n_jobs=args.n_jobs,
-                    )
-                    model.fit(x[train_idx], y_keep[train_idx])
+                    if estimator_name in {"no change", "context mean"}:
+                        model = build_estimator(
+                            estimator_name,
+                            n_train=len(train_idx),
+                            n_features=y_keep.shape[1],
+                            inner_splits=min(args.inner_splits, len(train_idx)),
+                            n_jobs=args.n_jobs,
+                        )
+                        model.fit(x[train_idx], y_keep[train_idx])
+                    else:
+                        model = build_estimator(
+                            estimator_name,
+                            n_train=len(train_idx),
+                            n_features=x.shape[1],
+                            inner_splits=min(args.inner_splits, len(train_idx)),
+                            n_jobs=args.n_jobs,
+                            use_pca=embedding_name != "pca",
+                        )
+                        model.fit(x[train_idx], y_keep[train_idx])
                     pred = model.predict(x[test_idx])
-                    per_sample_l2 = np.linalg.norm(y_keep[test_idx] - pred, axis=1)
+                    metrics = regression_metrics(y_keep[test_idx], pred)
                     row = {
                         "dataset": spec.name,
                         "context": context,
@@ -441,31 +543,21 @@ def evaluate_dataset(
                         "fold": fold,
                         "split": split_name,
                         "test_split_labels": split_labels,
-                        "l2": float(per_sample_l2.mean()),
+                        "l2": metrics["L2"],
+                        **metrics,
                         "n_train_compounds": int(len(train_idx)),
                         "n_test_compounds": int(len(test_idx)),
                         "n_total_compounds": int(len(compounds_keep)),
                         "n_context_rows": int(len(context_rows)),
                         "mean_test_replicates": float(counts_keep[test_idx].mean()),
-                        "best_params": json.dumps(model.best_params_, sort_keys=True),
+                        "best_params": json.dumps(getattr(model, "best_params_", {}), sort_keys=True),
                     }
                     if args.store_test_compounds:
                         row["test_compounds"] = ";".join(compounds_keep[test_idx].astype(str).tolist())
                     rows.append(row)
                 if len(rows) >= 20:
                     append_rows(args.output_csv, rows)
-                    completed.update(
-                        (
-                            r["dataset"],
-                            r["context"],
-                            r["estimator"],
-                            r["embedding"],
-                            int(r["fold"]),
-                            r["split"],
-                            r["test_split_labels"],
-                        )
-                        for r in rows
-                    )
+                    update_completed(completed, rows)
                     rows = []
     adata.file.close()
     return rows
@@ -478,7 +570,12 @@ def add_common_args(parser: argparse.ArgumentParser) -> None:
         default=["all"],
         help="Embedding keys to evaluate. Use 'all' for the generated default set.",
     )
-    parser.add_argument("--estimators", nargs="+", choices=["knn", "lasso"], default=["knn", "lasso"])
+    parser.add_argument(
+        "--estimators",
+        nargs="+",
+        choices=["knn", "lasso", "no change", "context mean"],
+        default=["knn", "lasso"],
+    )
     parser.add_argument("--context-cols", nargs="+", default=["cell_type"])
     parser.add_argument("--compound-col", default="perturbagen")
     parser.add_argument("--control-col", default="is_control")
@@ -500,6 +597,12 @@ def add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--output-csv", type=Path, required=True)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--store-test-compounds", action="store_true")
+    parser.add_argument(
+        "--restrict-to-lpm",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Restrict every embedding/estimator to the shared compounds present in --lpm-dir.",
+    )
     parser.add_argument(
         "--map-sciplex-cids-to-drugs",
         action="store_true",

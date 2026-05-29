@@ -40,7 +40,12 @@ def parse_args() -> argparse.Namespace:
         default=["all"],
         help="Embedding keys to evaluate. Use 'all' for the generated default set.",
     )
-    parser.add_argument("--estimators", nargs="+", choices=["knn", "lasso"], default=["knn", "lasso"])
+    parser.add_argument(
+        "--estimators",
+        nargs="+",
+        choices=["knn", "lasso", "no change", "context mean"],
+        default=["knn", "lasso"],
+    )
     parser.add_argument("--context-cols", nargs="+", default=["cell_type"])
     parser.add_argument("--compound-col", default="perturbagen")
     parser.add_argument(
@@ -77,6 +82,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-csv", type=Path, required=True)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--store-test-compounds", action="store_true")
+    parser.add_argument("--restrict-to-lpm", action=argparse.BooleanOptionalAction, default=True)
     return parser.parse_args()
 
 
