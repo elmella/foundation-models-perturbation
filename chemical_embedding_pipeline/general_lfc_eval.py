@@ -51,6 +51,8 @@ DEFAULT_EMBEDDINGS = [
 ]
 
 SPECIAL_EMBEDDINGS = {"random", "pca"}
+BASELINE_ESTIMATORS = {"no change", "context mean"}
+BASELINE_OUTPUT_ESTIMATOR = "baseline"
 
 
 @dataclass(frozen=True)
@@ -226,6 +228,14 @@ def build_estimator(name: str, n_train: int, n_features: int, inner_splits: int,
     )
 
 
+def predict_baseline(name: str, y_train: np.ndarray, n_test: int) -> np.ndarray:
+    if name == "no change":
+        return np.zeros((n_test, y_train.shape[1]), dtype=np.float64)
+    if name == "context mean":
+        return np.repeat(y_train.mean(axis=0, keepdims=True), n_test, axis=0)
+    raise ValueError(f"Unknown baseline: {name}")
+
+
 def existing_keys(path: Path) -> set[tuple[str, str, str, str, int, str, str]]:
     if not path.exists():
         return set()
@@ -393,6 +403,8 @@ def evaluate_dataset(
     embedding_names: list[str],
     completed: set[tuple[str, str, str, str, int, str, str]],
 ) -> list[dict]:
+    regression_estimators = [name for name in args.estimators if name not in BASELINE_ESTIMATORS]
+    baseline_estimators = [name for name in args.estimators if name in BASELINE_ESTIMATORS]
     input_h5ad = resolve_existing_path(
         spec.input_h5ad,
         list(spec.input_fallbacks),
@@ -478,6 +490,55 @@ def evaluate_dataset(
                 context_embeddings[special_name] = special_matrix
                 context_indices[special_name] = pd.Index(pd.Index(compounds).astype(str))
 
+        context_splits = split_indices(np.asarray(compounds, dtype=str), test_compounds, args)
+        for fold, train_idx, test_idx, split_name in context_splits:
+            if len(train_idx) < args.min_compounds or len(test_idx) == 0:
+                for baseline_name in baseline_estimators:
+                    print(
+                        f"Skipping {spec.name} {context} {baseline_name} {split_name}: "
+                        f"train={len(train_idx)} test={len(test_idx)}"
+                    )
+                continue
+            for baseline_name in baseline_estimators:
+                split_labels = ",".join(args.test_split_labels)
+                key = (
+                    spec.name,
+                    str(context),
+                    BASELINE_OUTPUT_ESTIMATOR,
+                    baseline_name,
+                    int(fold),
+                    split_name,
+                    split_labels,
+                )
+                if args.resume and key in completed:
+                    continue
+                pred = predict_baseline(baseline_name, y[train_idx], len(test_idx))
+                metrics = regression_metrics(y[test_idx], pred)
+                row = {
+                    "dataset": spec.name,
+                    "context": context,
+                    "estimator": BASELINE_OUTPUT_ESTIMATOR,
+                    "embedding": baseline_name,
+                    "fold": fold,
+                    "split": split_name,
+                    "test_split_labels": split_labels,
+                    "l2": metrics["L2"],
+                    **metrics,
+                    "n_train_compounds": int(len(train_idx)),
+                    "n_test_compounds": int(len(test_idx)),
+                    "n_total_compounds": int(len(compounds)),
+                    "n_context_rows": int(len(context_rows)),
+                    "mean_test_replicates": float(replicate_counts[test_idx].mean()),
+                    "best_params": "{}",
+                }
+                if args.store_test_compounds:
+                    row["test_compounds"] = ";".join(np.asarray(compounds, dtype=str)[test_idx].tolist())
+                rows.append(row)
+            if len(rows) >= 20:
+                append_rows(args.output_csv, rows)
+                update_completed(completed, rows)
+                rows = []
+
         for embedding_name, matrix in progress(
             context_embeddings.items(),
             desc=f"{spec.name} {context} embeddings",
@@ -501,7 +562,7 @@ def evaluate_dataset(
                         f"train={len(train_idx)} test={len(test_idx)}"
                     )
                     continue
-                for estimator_name in args.estimators:
+                for estimator_name in regression_estimators:
                     split_labels = ",".join(args.test_split_labels)
                     key = (
                         spec.name,
@@ -514,25 +575,15 @@ def evaluate_dataset(
                     )
                     if args.resume and key in completed:
                         continue
-                    if estimator_name in {"no change", "context mean"}:
-                        model = build_estimator(
-                            estimator_name,
-                            n_train=len(train_idx),
-                            n_features=y_keep.shape[1],
-                            inner_splits=min(args.inner_splits, len(train_idx)),
-                            n_jobs=args.n_jobs,
-                        )
-                        model.fit(x[train_idx], y_keep[train_idx])
-                    else:
-                        model = build_estimator(
-                            estimator_name,
-                            n_train=len(train_idx),
-                            n_features=x.shape[1],
-                            inner_splits=min(args.inner_splits, len(train_idx)),
-                            n_jobs=args.n_jobs,
-                            use_pca=embedding_name != "pca",
-                        )
-                        model.fit(x[train_idx], y_keep[train_idx])
+                    model = build_estimator(
+                        estimator_name,
+                        n_train=len(train_idx),
+                        n_features=x.shape[1],
+                        inner_splits=min(args.inner_splits, len(train_idx)),
+                        n_jobs=args.n_jobs,
+                        use_pca=embedding_name != "pca",
+                    )
+                    model.fit(x[train_idx], y_keep[train_idx])
                     pred = model.predict(x[test_idx])
                     metrics = regression_metrics(y_keep[test_idx], pred)
                     row = {
