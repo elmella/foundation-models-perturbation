@@ -35,6 +35,16 @@ def parse_args() -> argparse.Namespace:
         default=["cell_type", "pubchem_cid", "perturbagen", "drug"],
         help="Columns to combine into stable obs names when present.",
     )
+    parser.add_argument(
+        "--where",
+        action="append",
+        default=[],
+        metavar="COLUMN=VALUE",
+        help=(
+            "Keep rows whose obs COLUMN matches VALUE. May be passed multiple times. "
+            "Matching is string-based so values like 10, 10.0, and 10000.0 can be selected exactly."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -65,8 +75,37 @@ def stable_obs_names(obs: pd.DataFrame, columns: list[str], fallback_prefix: str
     return names
 
 
+def parse_where(filters: list[str]) -> list[tuple[str, str]]:
+    parsed = []
+    for item in filters:
+        if "=" not in item:
+            raise ValueError(f"Invalid --where {item!r}; expected COLUMN=VALUE")
+        column, value = item.split("=", 1)
+        column = column.strip()
+        value = value.strip()
+        if not column:
+            raise ValueError(f"Invalid --where {item!r}; column is empty")
+        parsed.append((column, value))
+    return parsed
+
+
+def apply_filters(dge: ad.AnnData, filters: list[tuple[str, str]], path: Path) -> ad.AnnData:
+    if not filters:
+        return dge
+    mask = pd.Series(True, index=dge.obs.index)
+    for column, value in filters:
+        if column not in dge.obs.columns:
+            raise ValueError(f"{path} is missing --where column {column!r}")
+        mask &= dge.obs[column].astype(str).eq(value)
+    if not mask.any():
+        details = ", ".join(f"{column}={value}" for column, value in filters)
+        raise ValueError(f"{path} has no rows matching {details}")
+    return dge[mask.to_numpy()].copy()
+
+
 def read_dge(path: Path, args: argparse.Namespace) -> ad.AnnData:
     dge = ad.read_h5ad(path)
+    dge = apply_filters(dge, parse_where(args.where), path)
     if args.layer not in dge.layers:
         raise ValueError(f"{path} is missing layer {args.layer!r}; available layers: {list(dge.layers.keys())}")
 

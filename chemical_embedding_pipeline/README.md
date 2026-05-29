@@ -121,8 +121,8 @@ evaluation with the 20 generated embeddings plus the LPM export from
 `lpm_paper10_ft_morgan_learned_fixmol_best_embeddings/lincs_phase1`:
 
 ```bash
-uv run python -m chemical_embedding_pipeline.run_l1000_lfc_eval \
-  --datasets phase1 phase2 \
+uv run python -m chemical_embedding_pipeline.general_lfc_eval \
+  --l1000 both \
   --output-csv results/scores/l1000_lfc_embedding_eval.csv \
   --resume
 ```
@@ -137,8 +137,8 @@ incrementally so the run can be resumed. The expression H5ADs are read from
 run:
 
 ```bash
-uv run python -m chemical_embedding_pipeline.run_l1000_lfc_eval \
-  --datasets phase2 \
+uv run python -m chemical_embedding_pipeline.general_lfc_eval \
+  --l1000 phase2 \
   --embeddings random \
   --estimators knn \
   --max-contexts 1 \

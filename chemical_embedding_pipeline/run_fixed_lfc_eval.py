@@ -3,12 +3,12 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from chemical_embedding_pipeline.run_l1000_lfc_eval import (
+from chemical_embedding_pipeline.general_lfc_eval import (
     DEFAULT_EMBEDDINGS,
     DatasetSpec,
+    append_rows,
     evaluate_dataset,
     existing_keys,
-    append_rows,
 )
 
 
@@ -43,6 +43,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--estimators", nargs="+", choices=["knn", "lasso"], default=["knn", "lasso"])
     parser.add_argument("--context-cols", nargs="+", default=["cell_type"])
     parser.add_argument("--compound-col", default="perturbagen")
+    parser.add_argument(
+        "--map-sciplex-cids-to-drugs",
+        action="store_true",
+        help=(
+            "Map heldout PubChem CIDs and LPM export rows to sci-Plex drug names. "
+            "Use this when evaluating benchmark/data/sciplex/sciplex3_pseudobulk_filtered.h5ad "
+            "with --compound-col drug."
+        ),
+    )
+    parser.add_argument(
+        "--sciplex-cid-map-pkl",
+        type=Path,
+        default=Path("molecule_embeddings/tahoe_sci_op3_updated.pkl"),
+        help="PKL with sciplex3 original_pert_name/pubchem_cid columns for CID-to-drug mapping.",
+    )
     parser.add_argument("--control-col", default="is_control")
     parser.add_argument("--include-controls", action="store_true")
     parser.add_argument("--inner-splits", type=int, default=5)

@@ -57,132 +57,8 @@ class DatasetSpec:
     input_h5ad: Path
     embedding_h5ad: Path
     embedding_nested_dir: str
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description=(
-            "Run molecule-heldout LFC regression on L1000 phase datasets using generated "
-            "compound embeddings plus an optional LPM export."
-        )
-    )
-    parser.add_argument(
-        "--phase1-h5ad",
-        type=Path,
-        default=Path("data/theislab_temp/l1000_phase1/l1000_phase1_level3_deg_ready_landmark_processed.h5ad"),
-    )
-    parser.add_argument(
-        "--phase1-embeddings",
-        type=Path,
-        default=Path(
-            "data/generated_lfc_embeddings/l1000/"
-            "l1000_phase1_level3_deg_ready_landmark_processed_compound_embeddings.h5ad"
-        ),
-    )
-    parser.add_argument(
-        "--phase2-h5ad",
-        type=Path,
-        default=Path("data/theislab_temp/l1000_phase2/l1000_phase2_level3_deg_ready_landmark_processed.h5ad"),
-    )
-    parser.add_argument(
-        "--phase2-embeddings",
-        type=Path,
-        default=Path(
-            "data/generated_lfc_embeddings/l1000/"
-            "l1000_phase2_level3_deg_ready_landmark_processed_compound_embeddings.h5ad"
-        ),
-    )
-    parser.add_argument(
-        "--datasets",
-        nargs="+",
-        choices=["phase1", "phase2"],
-        default=["phase1", "phase2"],
-        help="Which L1000 phase datasets to evaluate.",
-    )
-    parser.add_argument(
-        "--phase1-lpm-dir",
-        type=Path,
-        default=Path("lpm_paper10_ft_morgan_learned_fixmol_best_embeddings/lincs_phase1"),
-        help="Phase 1 LPM export directory containing molecule_metadata.tsv and molecule_embeddings.npy.",
-    )
-    parser.add_argument(
-        "--phase2-lpm-dir",
-        type=Path,
-        default=Path("lpm_paper10_ft_morgan_learned_fixmol_best_embeddings/lincs_phase2"),
-        help="Phase 2 LPM export directory containing molecule_metadata.tsv and molecule_embeddings.npy.",
-    )
-    parser.add_argument("--phase1-lpm-name", default="lpm_ft_morgan_learned_fixmol_lincs_phase1")
-    parser.add_argument("--phase2-lpm-name", default="lpm_ft_morgan_learned_fixmol_lincs_phase2")
-    parser.add_argument(
-        "--embeddings",
-        nargs="+",
-        default=["all"],
-        help="Embedding keys to evaluate. Use 'all' for the 20 generated embeddings.",
-    )
-    parser.add_argument(
-        "--estimators",
-        nargs="+",
-        choices=["knn", "lasso"],
-        default=["knn", "lasso"],
-    )
-    parser.add_argument(
-        "--context-cols",
-        nargs="+",
-        default=["cell_type"],
-        help="Columns that define separate LFC tasks. Use --context-cols all to pool all rows.",
-    )
-    parser.add_argument("--compound-col", default="perturbagen")
-    parser.add_argument("--control-col", default="is_control")
-    parser.add_argument(
-        "--include-controls",
-        action="store_true",
-        help="Include control rows such as DMSO in the regression task.",
-    )
-    parser.add_argument("--n-splits", type=int, default=5)
-    parser.add_argument("--inner-splits", type=int, default=5)
-    parser.add_argument(
-        "--n-jobs",
-        type=int,
-        default=1,
-        help="Number of sklearn/joblib workers for inner GridSearchCV fits.",
-    )
-    parser.add_argument(
-        "--heldout-molecules-path",
-        type=Path,
-        default=Path("lpm_paper10_ft_morgan_learned_fixmol_best_embeddings/heldout_molecules.tsv"),
-    )
-    parser.add_argument(
-        "--test-split-labels",
-        nargs="+",
-        default=["test"],
-        help="Heldout split labels to evaluate. Default is test only, so val compounds stay in training.",
-    )
-    parser.add_argument(
-        "--split-mode",
-        choices=["fixed", "kfold"],
-        default="fixed",
-        help="fixed uses heldout_molecules.tsv; kfold uses ad hoc molecule CV.",
-    )
-    parser.add_argument("--min-compounds", type=int, default=50)
-    parser.add_argument("--max-contexts", type=int, default=None)
-    parser.add_argument("--chunk-size", type=int, default=8192)
-    parser.add_argument("--random-seed", type=int, default=42)
-    parser.add_argument(
-        "--output-csv",
-        type=Path,
-        default=Path("results/scores/l1000_lfc_embedding_eval.csv"),
-    )
-    parser.add_argument(
-        "--resume",
-        action="store_true",
-        help="Skip rows already present in --output-csv.",
-    )
-    parser.add_argument(
-        "--store-test-compounds",
-        action="store_true",
-        help="Store semicolon-separated heldout compound ids for each fold. This can make the CSV large.",
-    )
-    return parser.parse_args()
+    input_fallbacks: tuple[Path, ...] = ()
+    embedding_fallbacks: tuple[Path, ...] = ()
 
 
 def bool_series(series: pd.Series) -> pd.Series:
@@ -247,7 +123,35 @@ def load_generated_embeddings(path: Path, names: list[str]) -> tuple[pd.Index, d
     return obs_names, matrices
 
 
-def load_lpm_embeddings(path: Path, name: str) -> tuple[pd.Index, dict[str, np.ndarray]]:
+SCIPLEX_DATASET_ALIASES = {"srivatsan20_sciplex3", "sciplex", "sciplex3"}
+
+
+def should_map_sciplex_cids(args: argparse.Namespace, spec: DatasetSpec) -> bool:
+    return bool(
+        getattr(args, "map_sciplex_cids_to_drugs", False)
+        and spec.heldout_dataset.lower() in SCIPLEX_DATASET_ALIASES
+    )
+
+
+def load_sciplex_cid_to_drug(path: Path) -> dict[str, str]:
+    pkl_df = pd.read_pickle(path)
+    required = {"dataset", "pubchem_cid", "original_pert_name"}
+    missing = required - set(pkl_df.columns)
+    if missing:
+        raise ValueError(f"{path} is missing required sci-Plex mapping columns: {sorted(missing)}")
+    sciplex = pkl_df[pkl_df["dataset"].astype(str).str.lower().eq("sciplex3")]
+    sciplex = sciplex.dropna(subset=["pubchem_cid", "original_pert_name"])
+    cid = sciplex["pubchem_cid"].astype(float).astype(int).astype(str)
+    drug = sciplex["original_pert_name"].astype(str)
+    return dict(zip(cid, drug))
+
+
+def load_lpm_embeddings(
+    path: Path,
+    name: str,
+    *,
+    index_map: dict[str, str] | None = None,
+) -> tuple[pd.Index, dict[str, np.ndarray]]:
     metadata_path = path / "molecule_metadata.tsv"
     embeddings_path = path / "molecule_embeddings.npy"
     metadata = pd.read_csv(metadata_path, sep="\t")
@@ -256,7 +160,13 @@ def load_lpm_embeddings(path: Path, name: str) -> tuple[pd.Index, dict[str, np.n
         raise ValueError(
             f"{metadata_path} has {len(metadata)} rows but {embeddings_path} has {values.shape[0]} embeddings"
         )
-    return pd.Index(metadata["symbol"].astype(str)), {name: values.astype(np.float64, copy=False)}
+    index = metadata["symbol"].astype(str)
+    if index_map is not None:
+        mapped = index.map(index_map)
+        keep = mapped.notna().to_numpy()
+        index = mapped.loc[keep].astype(str)
+        values = values[keep]
+    return pd.Index(index), {name: values.astype(np.float64, copy=False)}
 
 
 def align_embeddings(
@@ -357,7 +267,11 @@ def load_test_compounds(args: argparse.Namespace, spec: DatasetSpec) -> set[str]
         heldout["dataset"].astype(str).str.lower().eq(spec.heldout_dataset.lower())
         & heldout["split"].astype(str).str.lower().isin(split_labels)
     )
-    return set(heldout.loc[mask, "molecule"].astype(str))
+    compounds = heldout.loc[mask, "molecule"].astype(str)
+    if should_map_sciplex_cids(args, spec):
+        cid_to_drug = load_sciplex_cid_to_drug(args.sciplex_cid_map_pkl)
+        compounds = compounds.map(cid_to_drug).dropna().astype(str)
+    return set(compounds)
 
 
 def split_indices(
@@ -391,20 +305,20 @@ def resolve_existing_path(path: Path, fallbacks: list[Path], label: str) -> Path
     raise FileNotFoundError(f"Could not find {label}. Checked:\n{options}")
 
 
-def embedding_fallbacks(filename: str, nested_dir: str) -> list[Path]:
-    return [
+def l1000_embedding_fallbacks(filename: str, nested_dir: str) -> tuple[Path, ...]:
+    return (
         DATA_EMBEDDING_ROOT / filename,
         DATA_EMBEDDING_ROOT / nested_dir / filename,
         Path("generated_lfc_embeddings/l1000") / nested_dir / filename,
         Path("generated_lfc_embeddings/l1000") / filename,
-    ]
+    )
 
 
-def expression_fallbacks(filename: str, nested_dir: str) -> list[Path]:
-    return [
+def l1000_expression_fallbacks(filename: str, nested_dir: str) -> tuple[Path, ...]:
+    return (
         TEMP_DATA_ROOT / filename,
         TEMP_DATA_ROOT / nested_dir / filename,
-    ]
+    )
 
 
 def evaluate_dataset(
@@ -415,15 +329,15 @@ def evaluate_dataset(
 ) -> list[dict]:
     input_h5ad = resolve_existing_path(
         spec.input_h5ad,
-        expression_fallbacks(spec.input_h5ad.name, spec.input_h5ad.parent.name),
+        list(spec.input_fallbacks),
         (
-            f"{spec.name} expression H5AD. This is the original L1000 data, not the "
-            "compound embedding H5AD"
+            f"{spec.name} expression H5AD. This must contain the regression target in X, "
+            "not the compound embedding H5AD"
         ),
     )
     embedding_h5ad = resolve_existing_path(
         spec.embedding_h5ad,
-        embedding_fallbacks(spec.embedding_h5ad.name, spec.embedding_nested_dir),
+        list(spec.embedding_fallbacks),
         f"{spec.name} compound embedding H5AD",
     )
     print(f"Loading {spec.name}: {input_h5ad}")
@@ -439,11 +353,15 @@ def evaluate_dataset(
     obs["_context"] = context_label(obs, args.context_cols)
     row_positions = np.flatnonzero(mask.to_numpy())
 
+    sciplex_cid_to_drug = (
+        load_sciplex_cid_to_drug(args.sciplex_cid_map_pkl) if should_map_sciplex_cids(args, spec) else None
+    )
+
     generated_index, generated = load_generated_embeddings(embedding_h5ad, embedding_names)
     embeddings = dict(generated)
     indices = {name: generated_index for name in generated}
     if spec.lpm_dir is not None:
-        lpm_index, lpm = load_lpm_embeddings(spec.lpm_dir, spec.lpm_name)
+        lpm_index, lpm = load_lpm_embeddings(spec.lpm_dir, spec.lpm_name, index_map=sciplex_cid_to_drug)
         embeddings.update(lpm)
         indices.update({name: lpm_index for name in lpm})
     test_compounds = load_test_compounds(args, spec)
@@ -553,10 +471,135 @@ def evaluate_dataset(
     return rows
 
 
-def main() -> None:
-    args = parse_args()
-    embedding_names = DEFAULT_EMBEDDINGS if args.embeddings == ["all"] else args.embeddings
-    specs = {
+def add_common_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--embeddings",
+        nargs="+",
+        default=["all"],
+        help="Embedding keys to evaluate. Use 'all' for the generated default set.",
+    )
+    parser.add_argument("--estimators", nargs="+", choices=["knn", "lasso"], default=["knn", "lasso"])
+    parser.add_argument("--context-cols", nargs="+", default=["cell_type"])
+    parser.add_argument("--compound-col", default="perturbagen")
+    parser.add_argument("--control-col", default="is_control")
+    parser.add_argument("--include-controls", action="store_true")
+    parser.add_argument("--inner-splits", type=int, default=5)
+    parser.add_argument("--n-jobs", type=int, default=1)
+    parser.add_argument(
+        "--heldout-molecules-path",
+        type=Path,
+        default=Path("lpm_paper10_ft_morgan_learned_fixmol_best_embeddings/heldout_molecules.tsv"),
+    )
+    parser.add_argument("--test-split-labels", nargs="+", default=["test"])
+    parser.add_argument("--split-mode", choices=["fixed", "kfold"], default="fixed")
+    parser.add_argument("--n-splits", type=int, default=5)
+    parser.add_argument("--min-compounds", type=int, default=20)
+    parser.add_argument("--max-contexts", type=int, default=None)
+    parser.add_argument("--chunk-size", type=int, default=8192)
+    parser.add_argument("--random-seed", type=int, default=42)
+    parser.add_argument("--output-csv", type=Path, required=True)
+    parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--store-test-compounds", action="store_true")
+    parser.add_argument(
+        "--map-sciplex-cids-to-drugs",
+        action="store_true",
+        help=(
+            "Map heldout PubChem CIDs and LPM export rows to sci-Plex drug names. "
+            "Use this when evaluating benchmark/data/sciplex/sciplex3_pseudobulk_filtered.h5ad "
+            "with --compound-col drug."
+        ),
+    )
+    parser.add_argument(
+        "--sciplex-cid-map-pkl",
+        type=Path,
+        default=Path("molecule_embeddings/tahoe_sci_op3_updated.pkl"),
+        help="PKL with sciplex3 original_pert_name/pubchem_cid columns for CID-to-drug mapping.",
+    )
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Run molecule-heldout LFC regression for a target H5AD and compound embedding H5AD."
+    )
+    parser.add_argument(
+        "--l1000",
+        choices=["phase1", "phase2", "both"],
+        default=None,
+        help="Use built-in L1000 phase paths, heldout labels, and LPM defaults.",
+    )
+    parser.add_argument("--dataset-name", help="Name to write in the output CSV for a single generic dataset.")
+    parser.add_argument("--heldout-dataset", help="Dataset label in heldout_molecules.tsv for a generic dataset.")
+    parser.add_argument("--input-h5ad", type=Path, help="Target H5AD with regression values in X.")
+    parser.add_argument("--embedding-h5ad", type=Path, help="Compound embedding H5AD.")
+    parser.add_argument("--lpm-dir", type=Path, default=None)
+    parser.add_argument("--lpm-name", default="lpm_embedding")
+    parser.add_argument(
+        "--phase1-h5ad",
+        type=Path,
+        default=Path("data/theislab_temp/l1000_phase1/l1000_phase1_level3_deg_ready_landmark_processed.h5ad"),
+    )
+    parser.add_argument(
+        "--phase1-embeddings",
+        type=Path,
+        default=Path(
+            "data/generated_lfc_embeddings/l1000/"
+            "l1000_phase1_level3_deg_ready_landmark_processed_compound_embeddings.h5ad"
+        ),
+    )
+    parser.add_argument(
+        "--phase2-h5ad",
+        type=Path,
+        default=Path("data/theislab_temp/l1000_phase2/l1000_phase2_level3_deg_ready_landmark_processed.h5ad"),
+    )
+    parser.add_argument(
+        "--phase2-embeddings",
+        type=Path,
+        default=Path(
+            "data/generated_lfc_embeddings/l1000/"
+            "l1000_phase2_level3_deg_ready_landmark_processed_compound_embeddings.h5ad"
+        ),
+    )
+    parser.add_argument(
+        "--phase1-lpm-dir",
+        type=Path,
+        default=Path("lpm_paper10_ft_morgan_learned_fixmol_best_embeddings/lincs_phase1"),
+    )
+    parser.add_argument(
+        "--phase2-lpm-dir",
+        type=Path,
+        default=Path("lpm_paper10_ft_morgan_learned_fixmol_best_embeddings/lincs_phase2"),
+    )
+    parser.add_argument("--phase1-lpm-name", default="lpm_ft_morgan_learned_fixmol_lincs_phase1")
+    parser.add_argument("--phase2-lpm-name", default="lpm_ft_morgan_learned_fixmol_lincs_phase2")
+    add_common_args(parser)
+    return parser.parse_args()
+
+
+def generic_spec(args: argparse.Namespace) -> DatasetSpec:
+    required = {
+        "--dataset-name": args.dataset_name,
+        "--heldout-dataset": args.heldout_dataset,
+        "--input-h5ad": args.input_h5ad,
+        "--embedding-h5ad": args.embedding_h5ad,
+    }
+    missing = [flag for flag, value in required.items() if value is None]
+    if missing:
+        raise ValueError(f"Missing required generic dataset arguments: {', '.join(missing)}")
+    return DatasetSpec(
+        name=args.dataset_name,
+        heldout_dataset=args.heldout_dataset,
+        lpm_dir=args.lpm_dir,
+        lpm_name=args.lpm_name,
+        input_h5ad=args.input_h5ad,
+        embedding_h5ad=args.embedding_h5ad,
+        embedding_nested_dir=args.embedding_h5ad.parent.name,
+    )
+
+
+def l1000_specs(args: argparse.Namespace) -> dict[str, DatasetSpec]:
+    phase1_nested = "l1000_phase1_level3_deg_ready_landmark_processed"
+    phase2_nested = "l1000_phase2_level3_deg_ready_landmark_processed"
+    return {
         "phase1": DatasetSpec(
             "l1000_phase1",
             "LINCS_phase1_level3_epsilon",
@@ -564,7 +607,9 @@ def main() -> None:
             args.phase1_lpm_name,
             args.phase1_h5ad,
             args.phase1_embeddings,
-            "l1000_phase1_level3_deg_ready_landmark_processed",
+            phase1_nested,
+            input_fallbacks=l1000_expression_fallbacks(args.phase1_h5ad.name, args.phase1_h5ad.parent.name),
+            embedding_fallbacks=l1000_embedding_fallbacks(args.phase1_embeddings.name, phase1_nested),
         ),
         "phase2": DatasetSpec(
             "l1000_phase2",
@@ -573,13 +618,29 @@ def main() -> None:
             args.phase2_lpm_name,
             args.phase2_h5ad,
             args.phase2_embeddings,
-            "l1000_phase2_level3_deg_ready_landmark_processed",
+            phase2_nested,
+            input_fallbacks=l1000_expression_fallbacks(args.phase2_h5ad.name, args.phase2_h5ad.parent.name),
+            embedding_fallbacks=l1000_embedding_fallbacks(args.phase2_embeddings.name, phase2_nested),
         ),
     }
+
+
+def selected_specs(args: argparse.Namespace) -> list[DatasetSpec]:
+    if args.l1000 is None:
+        return [generic_spec(args)]
+    specs = l1000_specs(args)
+    if args.l1000 == "both":
+        return [specs["phase1"], specs["phase2"]]
+    return [specs[args.l1000]]
+
+
+def main() -> None:
+    args = parse_args()
+    embedding_names = DEFAULT_EMBEDDINGS if args.embeddings == ["all"] else args.embeddings
     completed = existing_keys(args.output_csv) if args.resume else set()
     final_rows: list[dict] = []
-    for key in args.datasets:
-        final_rows.extend(evaluate_dataset(specs[key], args, embedding_names, completed))
+    for spec in selected_specs(args):
+        final_rows.extend(evaluate_dataset(spec, args, embedding_names, completed))
     if final_rows:
         append_rows(args.output_csv, final_rows)
     print(f"Wrote {args.output_csv}")
